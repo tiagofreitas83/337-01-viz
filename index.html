@@ -78,7 +78,7 @@
 </div>
 
 <div id="info">
-  <b>337-01 Estudo 04</b> <span style="opacity:0.35;font-size:9px">build paint-debug</span><br>
+  <b>337-01 Estudo 04</b> <span style="opacity:0.35;font-size:9px">build geom-floor</span><br>
   <span style="opacity:0.7">arrastar: orbitar · scroll: zoom · shift+arrastar: pan · <b>F</b>: centralizar</span>
 </div>
 
@@ -471,6 +471,34 @@ loader.load(
         });
       }
     });
+    // ===== AUTO-DETECÇÃO DE PISO POR GEOMETRIA =====
+    // pega todo mesh cuja bounding box é "fina em Y" (laje horizontal)
+    // e tem área XZ razoável e não está muito alto
+    const sceneBbox = new THREE.Box3().setFromObject(model);
+    const sceneMinY = sceneBbox.min.y;
+    const sceneH = sceneBbox.max.y - sceneMinY;
+    let geomFloorCount = 0;
+    model.traverse((o) => {
+      if (!o.isMesh) return;
+      const bb = new THREE.Box3().setFromObject(o);
+      const sz = bb.getSize(new THREE.Vector3());
+      const maxXZ = Math.max(sz.x, sz.z);
+      const ratioY = sz.y / Math.max(maxXZ, 0.001);
+      const relH = (bb.min.y - sceneMinY) / Math.max(sceneH, 0.001);
+      // laje fina (Y/XZ < 0.06) E grande (>2 unidades) E na metade inferior da cena
+      if (ratioY < 0.06 && maxXZ > 2 && relH < 0.6) {
+        // evitar duplicar se já está em algum grupo
+        const already = meshGroups.floor.some(g => g.mesh === o)
+                     || meshGroups.blackwall.some(g => g.mesh === o)
+                     || meshGroups.lightwood.some(g => g.mesh === o);
+        if (!already) {
+          meshGroups.floor.push({ mesh: o, slot: Array.isArray(o.material) ? 0 : -1 });
+          geomFloorCount++;
+        }
+      }
+    });
+    console.log(`[auto-floor] detectados por geometria: +${geomFloorCount} meshes`);
+
     // contagem por nome de material em cada grupo (debug visual)
     const matsByGroup = {};
     for (const [key, list] of Object.entries(meshGroups)) {
