@@ -33,6 +33,12 @@
   .swatch.on { border-color: var(--gold); background: #2a241a; }
   .chip { width: 18px; height: 18px; border-radius: 3px; flex-shrink: 0; border: 1px solid rgba(255,255,255,0.1); }
   .swatch span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #pickerbar { position: fixed; bottom: 12px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.85); padding: 10px 14px; border-radius: 8px; font-size: 12px; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); display: none; max-width: 90vw; border: 1px solid var(--gold); }
+  #pickerbar.on { display: block; }
+  #pickerbar .pname { color: var(--gold); font-weight: 600; margin-bottom: 6px; word-break: break-all; }
+  #pickerbar .pact { display: flex; gap: 4px; flex-wrap: wrap; }
+  #pickerbar button { font-size: 10px; padding: 4px 8px; margin: 0; }
+  #pickbtn.active { background: var(--gold); color: #1a1a1a; border-color: var(--gold); }
 </style>
 </head>
 <body>
@@ -58,6 +64,17 @@
 
 <div id="app"></div>
 
+<div id="pickerbar">
+  <div class="pname" id="pname">—</div>
+  <div class="pact">
+    <button data-add="floor">+ Piso</button>
+    <button data-add="blackwall">+ Parede preta</button>
+    <button data-add="lightwood">+ Madeira clara</button>
+    <button data-add="roofblack">+ Cobertura preta</button>
+    <button id="pickclose">fechar</button>
+  </div>
+</div>
+
 <div id="info">
   <b>337-01 Estudo 04</b><br>
   <span style="opacity:0.7">arrastar: orbitar · scroll: zoom · shift+arrastar: pan · <b>F</b>: centralizar</span>
@@ -73,6 +90,8 @@
   <h3>Renderização</h3>
   <button id="wire">Wireframe</button>
   <button id="bg">Fundo claro</button>
+  <button id="pickbtn">🔍 Identificar</button>
+  <button id="resetcustom">Resetar custom</button>
   <hr>
   <h3>Acabamentos</h3>
   <div id="finishes"></div>
@@ -340,14 +359,27 @@ function buildMaterial(id) {
 // meshes-por-grupo, populado após load
 const meshGroups = { floor: [], blackwall: [], lightwood: [] };
 
+// adições persistentes via picker (localStorage)
+const CUSTOM_KEY = '337-01-custom-materials';
+const customAdds = JSON.parse(localStorage.getItem(CUSTOM_KEY) || '{"floor":[],"blackwall":[],"lightwood":[],"roofblack":[]}');
+
 function classifyMaterialName(name) {
   const raw = name || '';
   const N = raw.toUpperCase();
+  // 1. custom adds têm prioridade
+  for (const [key, list] of Object.entries(customAdds)) {
+    if (key !== 'roofblack' && list.includes(raw)) return key;
+  }
+  // 2. defaults
   for (const [key, grp] of Object.entries(GROUPS)) {
     if (grp.matchExact && grp.matchExact.includes(raw)) return key;
     if (grp.matchKeywords.some(k => N.includes(k))) return key;
   }
   return null;
+}
+
+function isRoofBlack(name) {
+  return name === 'TELHA METÁLICA' || customAdds.roofblack.includes(name);
 }
 
 function applyFinish(groupKey, optionId) {
@@ -391,11 +423,12 @@ loader.load(
         mats.forEach((m, idx) => {
           if (!m) return;
           if ('envMapIntensity' in m) m.envMapIntensity = ENV_INTENSITY;
-          // override: telhado branco -> preto fosco
-          if (m.name === 'TELHA METÁLICA') {
+          // override: cobertura/telhado branco -> preto fosco
+          if (isRoofBlack(m.name)) {
             m.color = new THREE.Color(0x101012);
             m.roughness = 0.65;
             m.metalness = 0.15;
+            if (m.map) m.map = null;
           }
           m.needsUpdate = true;
           const groupKey = classifyMaterialName(m.name);
@@ -517,6 +550,63 @@ window.addEventListener('resize', () => {
   camera.aspect = W()/H();
   camera.updateProjectionMatrix();
   renderer.setSize(W(), H());
+});
+
+// ============ PICKER (raycaster) ============
+let pickOn = false;
+let lastPickedName = null;
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+const pickbtn = document.getElementById('pickbtn');
+const pickerbar = document.getElementById('pickerbar');
+const pname = document.getElementById('pname');
+pickbtn.addEventListener('click', () => {
+  pickOn = !pickOn;
+  pickbtn.classList.toggle('active', pickOn);
+  renderer.domElement.style.cursor = pickOn ? 'crosshair' : 'default';
+  if (!pickOn) pickerbar.classList.remove('on');
+});
+document.getElementById('pickclose').addEventListener('click', () => pickerbar.classList.remove('on'));
+document.getElementById('resetcustom').addEventListener('click', () => {
+  if (confirm('Limpar materiais customizados adicionados?')) {
+    localStorage.removeItem(CUSTOM_KEY);
+    location.reload();
+  }
+});
+
+renderer.domElement.addEventListener('click', (e) => {
+  if (!pickOn || !model) return;
+  const rect = renderer.domElement.getBoundingClientRect();
+  mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+  mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+  raycaster.setFromCamera(mouse, camera);
+  const hits = raycaster.intersectObject(model, true);
+  if (!hits.length) return;
+  const hit = hits[0];
+  let matName = '?';
+  if (hit.object.material) {
+    const m = Array.isArray(hit.object.material)
+      ? hit.object.material[hit.face?.materialIndex || 0]
+      : hit.object.material;
+    matName = m?.name || '(sem nome)';
+  }
+  lastPickedName = matName;
+  pname.textContent = matName;
+  pickerbar.classList.add('on');
+  console.log('[pick]', matName, hit.object.name, hit.point);
+});
+
+pickerbar.querySelectorAll('button[data-add]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    if (!lastPickedName) return;
+    const grp = btn.dataset.add;
+    if (!customAdds[grp].includes(lastPickedName)) {
+      customAdds[grp].push(lastPickedName);
+      localStorage.setItem(CUSTOM_KEY, JSON.stringify(customAdds));
+    }
+    pname.textContent = `✓ "${lastPickedName}" adicionado a ${grp}. Recarregando…`;
+    setTimeout(() => location.reload(), 600);
+  });
 });
 
 (function loop() {
