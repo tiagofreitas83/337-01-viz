@@ -76,7 +76,7 @@
 </div>
 
 <div id="info">
-  <b>337-01 Estudo 04</b><br>
+  <b>337-01 Estudo 04</b> <span style="opacity:0.35;font-size:9px">build dbg-vidro</span><br>
   <span style="opacity:0.7">arrastar: orbitar · scroll: zoom · shift+arrastar: pan · <b>F</b>: centralizar</span>
 </div>
 
@@ -385,10 +385,18 @@ function isRoofBlack(name) {
 
 function applyFinish(groupKey, optionId) {
   const newMat = buildMaterial(optionId);
+  // garantir opacidade total (alguns materiais GLB vêm com transparent:true herdado)
+  newMat.transparent = false;
+  newMat.opacity = 1;
+  newMat.depthWrite = true;
+  newMat.side = THREE.FrontSide;
+  let touched = 0;
   meshGroups[groupKey].forEach(({ mesh, slot }) => {
     if (Array.isArray(mesh.material)) mesh.material[slot] = newMat;
     else mesh.material = newMat;
+    touched++;
   });
+  console.log(`[swap] ${groupKey} -> ${optionId}: ${touched} meshes tocados`);
   GROUPS[groupKey].current = optionId;
 }
 
@@ -439,8 +447,18 @@ loader.load(
         });
       }
     });
-    console.log('Acabamentos detectados:',
-      Object.fromEntries(Object.entries(meshGroups).map(([k,v]) => [k, v.length])));
+    // contagem por nome de material em cada grupo (debug visual)
+    const matsByGroup = {};
+    for (const [key, list] of Object.entries(meshGroups)) {
+      const counts = {};
+      list.forEach(({mesh, slot}) => {
+        const m = Array.isArray(mesh.material) ? mesh.material[slot] : mesh.material;
+        const n = m?.name || '(sem nome)';
+        counts[n] = (counts[n] || 0) + 1;
+      });
+      matsByGroup[key] = counts;
+    }
+    console.log('Acabamentos detectados:', matsByGroup);
 
     // monta UI de acabamentos
     const finishesDiv = document.getElementById('finishes');
@@ -448,7 +466,12 @@ loader.load(
       const wrap = document.createElement('div');
       wrap.className = 'group';
       const count = meshGroups[key].length;
-      wrap.innerHTML = `<h4>${grp.label} <span style="opacity:0.5;font-weight:400">· ${count} sup.</span></h4>`;
+      const matEntries = Object.entries(matsByGroup[key] || {}).sort((a,b)=>b[1]-a[1]);
+      const matListHTML = matEntries.length
+        ? matEntries.map(([n,c]) => `<span style="display:inline-block;margin:0 4px 2px 0;padding:1px 4px;background:#1a1a1a;border-radius:2px;">${n} (${c})</span>`).join('')
+        : '<span style="color:#c66;">— nenhum material classificado —</span>';
+      wrap.innerHTML = `<h4>${grp.label} <span style="opacity:0.5;font-weight:400">· ${count} sup.</span></h4>
+                        <div style="font-size:9px;color:#999;margin-bottom:6px;line-height:1.4;">${matListHTML}</div>`;
       const sw = document.createElement('div'); sw.className = 'swatches';
       grp.options.forEach(opt => {
         const cfg = MATERIALS[opt.id];
