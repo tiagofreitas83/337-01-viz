@@ -25,6 +25,14 @@
   button.active { background: var(--gold); color: #1a1a1a; border-color: var(--gold); }
   hr { border: 0; border-top: 1px solid #2a2a2a; margin: 12px 0; }
   #stats { font-size: 10px; color: #888; margin-top: 4px; }
+  .group { margin-bottom: 10px; }
+  .group h4 { margin: 0 0 6px 0; font-size: 11px; font-weight: 600; color: #ddd; text-transform: uppercase; letter-spacing: 0.4px; }
+  .swatches { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px; }
+  .swatch { display: flex; align-items: center; gap: 6px; padding: 4px 6px; background: #1f1f1f; border: 1px solid #2a2a2a; border-radius: 4px; cursor: pointer; font-size: 10px; line-height: 1.2; }
+  .swatch:hover { border-color: #4a4a4a; }
+  .swatch.on { border-color: var(--gold); background: #2a241a; }
+  .chip { width: 18px; height: 18px; border-radius: 3px; flex-shrink: 0; border: 1px solid rgba(255,255,255,0.1); }
+  .swatch span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>
 </head>
 <body>
@@ -65,6 +73,9 @@
   <h3>Renderização</h3>
   <button id="wire">Wireframe</button>
   <button id="bg">Fundo claro</button>
+  <hr>
+  <h3>Acabamentos</h3>
+  <div id="finishes"></div>
   <hr>
   <h3>Visibilidade</h3>
   <div id="nodes"></div>
@@ -133,6 +144,218 @@ let wireOn = false;
 let bgLight = false;
 let bbox = null;
 
+// ============ MATERIAL LIBRARY (PBR procedural via canvas) ============
+const MATERIALS = {
+  // PISO
+  granito_rustico:     { kind:'stone', base:'#8a8682', mid:'#6c6a66', dark:'#4a4845', rough:0.85, repeat:6, swatch:'#7a7672' },
+  travertino_navona:   { kind:'stone', base:'#d8c8a8', mid:'#c4b08c', dark:'#9c8868', rough:0.7,  repeat:4, blob:80, orient:'h', swatch:'#cdba94' },
+  basalto:             { kind:'stone', base:'#3a3a3e', mid:'#28282c', dark:'#16161a', rough:0.78, repeat:5, swatch:'#2c2c30' },
+  carvalho_piso:       { kind:'wood',  base:'#c8a878', dark:'#8a6a48', rough:0.55, repeat:8, orient:'h', swatch:'#b89668' },
+  porcelanato_cimento: { kind:'stone', base:'#bcb6ad', mid:'#a8a299', dark:'#8c8680', rough:0.5,  repeat:4, blob:120, swatch:'#aea89e' },
+
+  // PAREDE PRETA
+  concreto_tingido_preto: { kind:'stone', base:'#1a1a1c', mid:'#16161a', dark:'#0e0e10', rough:0.7,  repeat:3, blob:140, swatch:'#1a1a1c' },
+  ripado_ebanizado:       { kind:'wood',  base:'#1c1816', dark:'#080604', rough:0.6, repeat:14, orient:'v', ribs:true, swatch:'#181412' },
+  carvalho_claro_p:       { kind:'wood',  base:'#d4b890', dark:'#9c7c5c', rough:0.65, repeat:5, orient:'v', swatch:'#c4a880' },
+  freijo_natural_p:       { kind:'wood',  base:'#a87a4a', dark:'#6c4a28', rough:0.6, repeat:5, orient:'v', swatch:'#986a3a' },
+  carvalho_fendi:         { kind:'wood',  base:'#a89684', dark:'#806e5c', rough:0.7, repeat:5, orient:'v', swatch:'#a89684' }, // Hotel Pulso / Arthur Casas
+  cumaru_ambar:           { kind:'wood',  base:'#9c5c30', dark:'#6c3a18', rough:0.55, repeat:5, orient:'v', swatch:'#8c5028' },
+  nogueira_media:         { kind:'wood',  base:'#5c3a24', dark:'#3a2014', rough:0.6, repeat:5, orient:'v', swatch:'#4c2e1c' },
+
+  // MADEIRA CLARA (slot 3)
+  tauari_nordico:    { kind:'wood', base:'#e0c8a4', dark:'#a88c64', rough:0.6,  repeat:5, orient:'h', swatch:'#d0b894' },
+  carvalho_americano:{ kind:'wood', base:'#c8a878', dark:'#8a6a48', rough:0.55, repeat:5, orient:'h', swatch:'#b89668' },
+  freijo:            { kind:'wood', base:'#a87a4a', dark:'#6c4a28', rough:0.6,  repeat:5, orient:'h', swatch:'#986a3a' },
+  louro_freijo:      { kind:'wood', base:'#8a5c34', dark:'#583820', rough:0.6,  repeat:5, orient:'h', swatch:'#7a4c28' },
+  ipe_queimado:      { kind:'wood', base:'#704020', dark:'#3c1c0c', rough:0.55, repeat:5, orient:'h', swatch:'#5c3418' },
+  cumaru:            { kind:'wood', base:'#9c5c30', dark:'#6c3a18', rough:0.55, repeat:5, orient:'h', swatch:'#8c5028' },
+  pequia:            { kind:'wood', base:'#a88858', dark:'#705838', rough:0.6,  repeat:5, orient:'h', swatch:'#987848' },
+};
+
+const GROUPS = {
+  floor: {
+    label: 'Piso',
+    matchKeywords: ['GRANITO','PORCELANATO','CERÂMICA','CONTRAPISO','PEDRA - '],
+    options: [
+      { id:'granito_rustico',     label:'Granito rústico (original)' },
+      { id:'travertino_navona',   label:'Travertino Navona' },
+      { id:'basalto',             label:'Basalto' },
+      { id:'carvalho_piso',       label:'Carvalho americano' },
+      { id:'porcelanato_cimento', label:'Porcelanato cimento' },
+    ],
+    current: 'granito_rustico',
+  },
+  blackwall: {
+    label: 'Parede preta',
+    matchKeywords: ['CONCRETO APARENTE PRETO'],
+    options: [
+      { id:'concreto_tingido_preto', label:'Concreto tingido (original)' },
+      { id:'ripado_ebanizado',       label:'Ripado ebanizado' },
+      { id:'carvalho_claro_p',       label:'Carvalho claro' },
+      { id:'freijo_natural_p',       label:'Freijó natural' },
+      { id:'carvalho_fendi',         label:'Fendi / Pulso' },
+      { id:'cumaru_ambar',           label:'Cumaru âmbar' },
+      { id:'nogueira_media',         label:'Nogueira' },
+    ],
+    current: 'concreto_tingido_preto',
+  },
+  lightwood: {
+    label: 'Madeira clara',
+    matchKeywords: ['TAUARI','CARVALHO CLARO'],
+    options: [
+      { id:'tauari_nordico',     label:'Tauari nórdico (original)' },
+      { id:'carvalho_americano', label:'Carvalho americano' },
+      { id:'freijo',             label:'Freijó' },
+      { id:'louro_freijo',       label:'Louro freijó' },
+      { id:'ipe_queimado',       label:'Ipê queimado' },
+      { id:'cumaru',             label:'Cumaru' },
+      { id:'pequia',             label:'Pequiá' },
+    ],
+    current: 'tauari_nordico',
+  },
+};
+
+// --- helpers de cor + ruído ---
+function hex(c) { return parseInt(c.slice(1), 16); }
+function rgb(c) { const n = hex(c); return [(n>>16)&255,(n>>8)&255,n&255]; }
+function mix(a, b, t) { const A=rgb(a), B=rgb(b); return `rgb(${A[0]+(B[0]-A[0])*t|0},${A[1]+(B[1]-A[1])*t|0},${A[2]+(B[2]-A[2])*t|0})`; }
+
+function makeWoodTex(cfg) {
+  const S = 1024;
+  const c = document.createElement('canvas'); c.width = c.height = S;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = cfg.base; ctx.fillRect(0,0,S,S);
+  const vertical = cfg.orient !== 'h';
+  // veios grossos
+  const veins = 60;
+  for (let i = 0; i < veins; i++) {
+    const pos = Math.random() * S;
+    const w = 0.5 + Math.random() * 3;
+    const t = 0.15 + Math.random() * 0.55;
+    ctx.fillStyle = mix(cfg.base, cfg.dark, t);
+    ctx.globalAlpha = 0.5 + Math.random() * 0.4;
+    if (vertical) ctx.fillRect(pos, 0, w, S); else ctx.fillRect(0, pos, S, w);
+  }
+  ctx.globalAlpha = 1;
+  // nós
+  const knots = 4 + Math.random() * 5 | 0;
+  for (let i = 0; i < knots; i++) {
+    const x = Math.random()*S, y = Math.random()*S;
+    const r = 8 + Math.random()*22;
+    const grad = ctx.createRadialGradient(x,y,1, x,y,r);
+    grad.addColorStop(0, mix(cfg.base, cfg.dark, 0.85));
+    grad.addColorStop(0.6, mix(cfg.base, cfg.dark, 0.35));
+    grad.addColorStop(1, cfg.base);
+    ctx.fillStyle = grad; ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill();
+  }
+  // ripado: linhas escuras separando réguas
+  if (cfg.ribs) {
+    const ribs = 24;
+    ctx.fillStyle = '#000';
+    for (let i = 1; i < ribs; i++) {
+      const pos = i * (S / ribs);
+      ctx.globalAlpha = 0.55;
+      if (vertical) ctx.fillRect(pos-1, 0, 2, S); else ctx.fillRect(0, pos-1, S, 2);
+    }
+    ctx.globalAlpha = 1;
+  }
+  // ruído fino
+  const id = ctx.getImageData(0,0,S,S);
+  for (let i = 0; i < id.data.length; i += 4) {
+    const n = (Math.random() - 0.5) * 18;
+    id.data[i]+=n; id.data[i+1]+=n; id.data[i+2]+=n;
+  }
+  ctx.putImageData(id, 0, 0);
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  return tex;
+}
+
+function makeStoneTex(cfg) {
+  const S = 1024;
+  const c = document.createElement('canvas'); c.width = c.height = S;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = cfg.base; ctx.fillRect(0,0,S,S);
+  // manchas (estilo Voronoi pobre)
+  const blobs = cfg.blob || 90;
+  for (let i = 0; i < blobs; i++) {
+    const x = Math.random()*S, y = Math.random()*S;
+    const r = 30 + Math.random() * 120;
+    const t = Math.random();
+    const target = t < 0.5 ? cfg.mid : cfg.dark;
+    const grad = ctx.createRadialGradient(x,y,1, x,y,r);
+    grad.addColorStop(0, target);
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.globalAlpha = 0.15 + Math.random() * 0.35;
+    ctx.fillStyle = grad; ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  // veio horizontal pro travertino
+  if (cfg.orient === 'h') {
+    for (let i = 0; i < 35; i++) {
+      const y = Math.random() * S;
+      ctx.strokeStyle = mix(cfg.base, cfg.dark, 0.4);
+      ctx.globalAlpha = 0.2 + Math.random() * 0.25;
+      ctx.lineWidth = 0.5 + Math.random() * 1.5;
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      for (let x = 0; x <= S; x += 20) ctx.lineTo(x, y + (Math.random()-0.5)*8);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }
+  // ruído fino
+  const id = ctx.getImageData(0,0,S,S);
+  for (let i = 0; i < id.data.length; i += 4) {
+    const n = (Math.random() - 0.5) * 22;
+    id.data[i]+=n; id.data[i+1]+=n; id.data[i+2]+=n;
+  }
+  ctx.putImageData(id, 0, 0);
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  return tex;
+}
+
+const matCache = {};
+function buildMaterial(id) {
+  if (matCache[id]) return matCache[id];
+  const cfg = MATERIALS[id];
+  const m = new THREE.MeshStandardMaterial({
+    color: 0xffffff, roughness: cfg.rough, metalness: 0,
+    envMapIntensity: ENV_INTENSITY,
+  });
+  const tex = cfg.kind === 'wood' ? makeWoodTex(cfg) : makeStoneTex(cfg);
+  tex.repeat.set(cfg.repeat, cfg.repeat);
+  m.map = tex;
+  m.name = 'cfg_' + id;
+  matCache[id] = m;
+  return m;
+}
+
+// meshes-por-grupo, populado após load
+const meshGroups = { floor: [], blackwall: [], lightwood: [] };
+
+function classifyMaterialName(name) {
+  const N = (name || '').toUpperCase();
+  for (const [key, grp] of Object.entries(GROUPS)) {
+    if (grp.matchKeywords.some(k => N.includes(k))) return key;
+  }
+  return null;
+}
+
+function applyFinish(groupKey, optionId) {
+  const newMat = buildMaterial(optionId);
+  meshGroups[groupKey].forEach(({ mesh, slot }) => {
+    if (Array.isArray(mesh.material)) mesh.material[slot] = newMat;
+    else mesh.material = newMat;
+  });
+  GROUPS[groupKey].current = optionId;
+}
+
 const loader = new GLTFLoader();
 loader.setMeshoptDecoder(MeshoptDecoder);
 const bar = document.getElementById('bar-inner');
@@ -153,7 +376,7 @@ loader.load(
     document.getElementById('loading').style.display = 'none';
     document.getElementById('panel').style.display = 'block';
 
-    // contagens + boost de envMapIntensity para iluminar interiores
+    // contagens + boost de envMapIntensity + classificação dos meshes em grupos
     let meshes = 0, tris = 0;
     model.traverse((o) => {
       if (o.isMesh) {
@@ -162,13 +385,43 @@ loader.load(
         if (g && g.index) tris += g.index.count / 3;
         else if (g && g.attributes.position) tris += g.attributes.position.count / 3;
         const mats = Array.isArray(o.material) ? o.material : [o.material];
-        mats.forEach((m) => {
+        mats.forEach((m, idx) => {
           if (!m) return;
           if ('envMapIntensity' in m) m.envMapIntensity = ENV_INTENSITY;
           m.needsUpdate = true;
+          const groupKey = classifyMaterialName(m.name);
+          if (groupKey) {
+            meshGroups[groupKey].push({ mesh: o, slot: idx });
+          }
         });
       }
     });
+    console.log('Acabamentos detectados:',
+      Object.fromEntries(Object.entries(meshGroups).map(([k,v]) => [k, v.length])));
+
+    // monta UI de acabamentos
+    const finishesDiv = document.getElementById('finishes');
+    for (const [key, grp] of Object.entries(GROUPS)) {
+      const wrap = document.createElement('div');
+      wrap.className = 'group';
+      const count = meshGroups[key].length;
+      wrap.innerHTML = `<h4>${grp.label} <span style="opacity:0.5;font-weight:400">· ${count} sup.</span></h4>`;
+      const sw = document.createElement('div'); sw.className = 'swatches';
+      grp.options.forEach(opt => {
+        const cfg = MATERIALS[opt.id];
+        const el = document.createElement('div');
+        el.className = 'swatch' + (opt.id === grp.current ? ' on' : '');
+        el.innerHTML = `<div class="chip" style="background:${cfg.swatch}"></div><span title="${opt.label}">${opt.label}</span>`;
+        el.addEventListener('click', () => {
+          applyFinish(key, opt.id);
+          sw.querySelectorAll('.swatch').forEach(s => s.classList.remove('on'));
+          el.classList.add('on');
+        });
+        sw.appendChild(el);
+      });
+      wrap.appendChild(sw);
+      finishesDiv.appendChild(wrap);
+    }
     document.getElementById('stats').innerHTML =
       `${meshes.toLocaleString('pt-BR')} meshes · ${Math.round(tris).toLocaleString('pt-BR')} tris<br>` +
       `bbox: ${(bbox.max.x-bbox.min.x).toFixed(1)} × ${(bbox.max.y-bbox.min.y).toFixed(1)} × ${(bbox.max.z-bbox.min.z).toFixed(1)}`;
