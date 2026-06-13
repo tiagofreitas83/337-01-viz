@@ -78,7 +78,7 @@
 </div>
 
 <div id="info">
-  <b>337-01 Estudo 04</b> <span style="opacity:0.35;font-size:9px">build geom-floor</span><br>
+  <b>337-01 Estudo 04</b> <span style="opacity:0.35;font-size:9px">build pedra-donata</span><br>
   <span style="opacity:0.7">arrastar: orbitar · scroll: zoom · shift+arrastar: pan · <b>F</b>: centralizar</span>
 </div>
 
@@ -374,6 +374,7 @@ function classifyMaterialName(name) {
     if (key !== 'roofblack' && list.includes(raw)) return key;
   }
   // PISO — ordem importa, mais específico primeiro
+  if (N.includes('PEDRA DONATA')) return 'floor'; // piso real área social (BOSSA1)
   if (N.includes('VIDRO - CRISTAL')) return 'floor';
   if (N.includes('GRANITO')) return 'floor';
   if (N.includes('PORCELANATO')) return 'floor';
@@ -407,7 +408,7 @@ function applyFinish(groupKey, optionId) {
       mesh.material = flashMat;
     }
   });
-  console.log(`[FLASH] ${groupKey}: ${originals.length} meshes vermelhos por 600ms`);
+  console.log(`[FLASH] ${groupKey}: ${originals.length} meshes vermelhos por 250ms`);
 
   setTimeout(() => {
     // aplica material real
@@ -421,7 +422,7 @@ function applyFinish(groupKey, optionId) {
       else mesh.material = newMat;
     });
     GROUPS[groupKey].current = optionId;
-  }, 600);
+  }, 250);
 }
 
 const loader = new GLTFLoader();
