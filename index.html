@@ -176,6 +176,7 @@ const GROUPS = {
   floor: {
     label: 'Piso',
     matchKeywords: ['GRANITO','PORCELANATO','CERÂMICA','CONTRAPISO','PEDRA - '],
+    matchExact: ['<auto>5'],
     options: [
       { id:'granito_rustico',     label:'Granito rústico (original)' },
       { id:'travertino_navona',   label:'Travertino Navona' },
@@ -340,8 +341,10 @@ function buildMaterial(id) {
 const meshGroups = { floor: [], blackwall: [], lightwood: [] };
 
 function classifyMaterialName(name) {
-  const N = (name || '').toUpperCase();
+  const raw = name || '';
+  const N = raw.toUpperCase();
   for (const [key, grp] of Object.entries(GROUPS)) {
+    if (grp.matchExact && grp.matchExact.includes(raw)) return key;
     if (grp.matchKeywords.some(k => N.includes(k))) return key;
   }
   return null;
@@ -388,6 +391,12 @@ loader.load(
         mats.forEach((m, idx) => {
           if (!m) return;
           if ('envMapIntensity' in m) m.envMapIntensity = ENV_INTENSITY;
+          // override: telhado branco -> preto fosco
+          if (m.name === 'TELHA METÁLICA') {
+            m.color = new THREE.Color(0x101012);
+            m.roughness = 0.65;
+            m.metalness = 0.15;
+          }
           m.needsUpdate = true;
           const groupKey = classifyMaterialName(m.name);
           if (groupKey) {
