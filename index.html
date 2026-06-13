@@ -76,7 +76,7 @@
 </div>
 
 <div id="info">
-  <b>337-01 Estudo 04</b> <span style="opacity:0.35;font-size:9px">build dbg-vidro</span><br>
+  <b>337-01 Estudo 04</b> <span style="opacity:0.35;font-size:9px">build flash-test</span><br>
   <span style="opacity:0.7">arrastar: orbitar · scroll: zoom · shift+arrastar: pan · <b>F</b>: centralizar</span>
 </div>
 
@@ -365,16 +365,25 @@ const customAdds = JSON.parse(localStorage.getItem(CUSTOM_KEY) || '{"floor":[],"
 
 function classifyMaterialName(name) {
   const raw = name || '';
-  const N = raw.toUpperCase();
-  // 1. custom adds têm prioridade
+  const N = raw.toUpperCase().trim();
+  if (!N) return null;
+  // custom user adds têm prioridade
   for (const [key, list] of Object.entries(customAdds)) {
     if (key !== 'roofblack' && list.includes(raw)) return key;
   }
-  // 2. defaults
-  for (const [key, grp] of Object.entries(GROUPS)) {
-    if (grp.matchExact && grp.matchExact.includes(raw)) return key;
-    if (grp.matchKeywords.some(k => N.includes(k))) return key;
-  }
+  // PISO — ordem importa, mais específico primeiro
+  if (N.includes('VIDRO - CRISTAL')) return 'floor';
+  if (N.includes('GRANITO')) return 'floor';
+  if (N.includes('PORCELANATO')) return 'floor';
+  if (N.includes('CERÂMICA') || N.includes('CERAMICA')) return 'floor';
+  if (N.includes('CONTRAPISO')) return 'floor';
+  if (N.startsWith('PEDRA - ')) return 'floor';
+  if (raw === '<auto>5') return 'floor';
+  // PAREDE PRETA
+  if (N.includes('CONCRETO APARENTE PRETO')) return 'blackwall';
+  // MADEIRA CLARA
+  if (N.includes('TAUARI')) return 'lightwood';
+  if (N.includes('CARVALHO CLARO')) return 'lightwood';
   return null;
 }
 
@@ -384,20 +393,33 @@ function isRoofBlack(name) {
 }
 
 function applyFinish(groupKey, optionId) {
-  const newMat = buildMaterial(optionId);
-  // garantir opacidade total (alguns materiais GLB vêm com transparent:true herdado)
-  newMat.transparent = false;
-  newMat.opacity = 1;
-  newMat.depthWrite = true;
-  newMat.side = THREE.FrontSide;
-  let touched = 0;
+  // ========== FLASH VERMELHO antes do swap real ==========
+  const flashMat = new THREE.MeshBasicMaterial({ color: 0xff0040, transparent: false, opacity: 1, side: THREE.DoubleSide });
+  const originals = [];
   meshGroups[groupKey].forEach(({ mesh, slot }) => {
-    if (Array.isArray(mesh.material)) mesh.material[slot] = newMat;
-    else mesh.material = newMat;
-    touched++;
+    if (Array.isArray(mesh.material)) {
+      originals.push({ mesh, slot, mat: mesh.material[slot] });
+      mesh.material[slot] = flashMat;
+    } else {
+      originals.push({ mesh, slot: -1, mat: mesh.material });
+      mesh.material = flashMat;
+    }
   });
-  console.log(`[swap] ${groupKey} -> ${optionId}: ${touched} meshes tocados`);
-  GROUPS[groupKey].current = optionId;
+  console.log(`[FLASH] ${groupKey}: ${originals.length} meshes vermelhos por 600ms`);
+
+  setTimeout(() => {
+    // aplica material real
+    const newMat = buildMaterial(optionId);
+    newMat.transparent = false;
+    newMat.opacity = 1;
+    newMat.depthWrite = true;
+    newMat.side = THREE.FrontSide;
+    originals.forEach(({ mesh, slot }) => {
+      if (slot >= 0) mesh.material[slot] = newMat;
+      else mesh.material = newMat;
+    });
+    GROUPS[groupKey].current = optionId;
+  }, 600);
 }
 
 const loader = new GLTFLoader();
