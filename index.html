@@ -67,6 +67,8 @@
 <div id="pickerbar">
   <div class="pname" id="pname">—</div>
   <div class="pact">
+    <button id="paintall" style="background:#ff0040;color:#fff;border-color:#ff0040;">🔴 Pintar TUDO com este mat</button>
+    <button id="paintreset">↩ Restaurar</button>
     <button data-add="floor">+ Piso</button>
     <button data-add="blackwall">+ Parede preta</button>
     <button data-add="lightwood">+ Madeira clara</button>
@@ -76,7 +78,7 @@
 </div>
 
 <div id="info">
-  <b>337-01 Estudo 04</b> <span style="opacity:0.35;font-size:9px">build flash-test</span><br>
+  <b>337-01 Estudo 04</b> <span style="opacity:0.35;font-size:9px">build paint-debug</span><br>
   <span style="opacity:0.7">arrastar: orbitar · scroll: zoom · shift+arrastar: pan · <b>F</b>: centralizar</span>
 </div>
 
@@ -640,6 +642,44 @@ renderer.domElement.addEventListener('click', (e) => {
   pname.textContent = matName;
   pickerbar.classList.add('on');
   console.log('[pick]', matName, hit.object.name, hit.point);
+});
+
+// Paint debug: pintar TODOS meshes com o material clicado de vermelho
+const paintBackup = []; // {mesh, slot, mat}
+const paintRedMat = new THREE.MeshBasicMaterial({ color: 0xff0040, side: THREE.DoubleSide });
+document.getElementById('paintall').addEventListener('click', () => {
+  if (!lastPickedName || !model) return;
+  // restore previous paint first
+  paintBackup.forEach(({mesh, slot, mat}) => {
+    if (slot >= 0) mesh.material[slot] = mat; else mesh.material = mat;
+  });
+  paintBackup.length = 0;
+  let n = 0;
+  model.traverse((o) => {
+    if (!o.isMesh) return;
+    const mats = Array.isArray(o.material) ? o.material : [o.material];
+    mats.forEach((m, idx) => {
+      if (m && m.name === lastPickedName) {
+        if (Array.isArray(o.material)) {
+          paintBackup.push({mesh: o, slot: idx, mat: o.material[idx]});
+          o.material[idx] = paintRedMat;
+        } else {
+          paintBackup.push({mesh: o, slot: -1, mat: o.material});
+          o.material = paintRedMat;
+        }
+        n++;
+      }
+    });
+  });
+  pname.textContent = `🔴 ${n} meshes pintados como "${lastPickedName}"`;
+  console.log(`[paintall] ${lastPickedName}: ${n} meshes`);
+});
+document.getElementById('paintreset').addEventListener('click', () => {
+  paintBackup.forEach(({mesh, slot, mat}) => {
+    if (slot >= 0) mesh.material[slot] = mat; else mesh.material = mat;
+  });
+  pname.textContent = `↩ ${paintBackup.length} meshes restaurados`;
+  paintBackup.length = 0;
 });
 
 pickerbar.querySelectorAll('button[data-add]').forEach(btn => {
