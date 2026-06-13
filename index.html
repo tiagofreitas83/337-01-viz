@@ -195,7 +195,7 @@ const GROUPS = {
   floor: {
     label: 'Piso',
     matchKeywords: ['GRANITO','PORCELANATO','CERÂMICA','CONTRAPISO','PEDRA - '],
-    matchExact: ['<auto>5'],
+    matchExact: ['<auto>5', 'VIDRO - CRISTAL'],
     options: [
       { id:'granito_rustico',     label:'Granito rústico (original)' },
       { id:'travertino_navona',   label:'Travertino Navona' },
@@ -378,8 +378,9 @@ function classifyMaterialName(name) {
   return null;
 }
 
+const ROOF_BLACK_DEFAULT = ['TELHA METÁLICA', 'PINTURA - CINZA ESCURO'];
 function isRoofBlack(name) {
-  return name === 'TELHA METÁLICA' || customAdds.roofblack.includes(name);
+  return ROOF_BLACK_DEFAULT.includes(name) || customAdds.roofblack.includes(name);
 }
 
 function applyFinish(groupKey, optionId) {
