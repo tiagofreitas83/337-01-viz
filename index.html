@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>337-01 Estudo 04 — Visualizador</title>
+<style>
+  :root { --gold: #FFCD7D; }
+  html, body { margin: 0; padding: 0; height: 100%; background: #1a1a1a; color: #eee; font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif; overflow: hidden; }
+  #app { position: fixed; inset: 0; }
+  #info { position: fixed; top: 12px; left: 12px; background: rgba(0,0,0,0.55); padding: 10px 14px; border-radius: 8px; font-size: 12px; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); line-height: 1.5; }
+  #info b { color: var(--gold); }
+  #loading { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; flex-direction: column; background: #1a1a1a; z-index: 10; }
+  #bar { width: 320px; height: 4px; background: #2a2a2a; border-radius: 2px; overflow: hidden; margin-top: 14px; }
+  #bar-inner { height: 100%; background: var(--gold); width: 0%; transition: width 0.15s; }
+  #msg { font-size: 14px; color: #ccc; }
+  #sub { font-size: 11px; color: #888; margin-top: 6px; }
+  #panel { position: fixed; top: 12px; right: 12px; background: rgba(0,0,0,0.55); padding: 12px 14px; border-radius: 8px; font-size: 12px; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); max-width: 300px; max-height: calc(100vh - 24px); overflow-y: auto; display: none; }
+  #panel h3 { margin: 0 0 8px 0; font-size: 12px; font-weight: 600; color: var(--gold); text-transform: uppercase; letter-spacing: 0.5px; }
+  .row { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+  .row label { flex: 1; font-size: 11px; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row input { accent-color: var(--gold); }
+  button { background: #2a2a2a; color: #eee; border: 1px solid #3a3a3a; padding: 6px 10px; border-radius: 4px; cursor: pointer; font-size: 11px; margin-right: 4px; margin-bottom: 4px; }
+  button:hover { background: #3a3a3a; border-color: var(--gold); }
+  button.active { background: var(--gold); color: #1a1a1a; border-color: var(--gold); }
+  hr { border: 0; border-top: 1px solid #2a2a2a; margin: 12px 0; }
+  #stats { font-size: 10px; color: #888; margin-top: 4px; }
+</style>
+</head>
+<body>
+<div id="loading">
+  <div id="msg">Carregando modelo…</div>
+  <div id="bar"><div id="bar-inner"></div></div>
+  <div id="sub">44 MB otimizado (de 707 MB original)</div>
+  <pre id="diag" style="margin-top:14px;font-size:10px;color:#888;max-width:600px;text-align:left;background:#111;padding:8px;border-radius:4px;max-height:300px;overflow:auto;display:none"></pre>
+</div>
+<script>
+  // diagnóstico antes dos módulos
+  window.__diag = (msg, color='#aaa') => {
+    const d = document.getElementById('diag');
+    d.style.display = 'block';
+    d.style.color = color;
+    d.textContent += msg + '\n';
+    d.scrollTop = d.scrollHeight;
+  };
+  window.addEventListener('error', e => __diag('[error] ' + (e.message || e.error?.message || 'unknown') + ' at ' + (e.filename || '?') + ':' + (e.lineno || '?'), '#ff8888'));
+  window.addEventListener('unhandledrejection', e => __diag('[reject] ' + (e.reason?.message || e.reason || 'unknown'), '#ff8888'));
+  __diag('[boot] página carregada ' + new Date().toLocaleTimeString());
+</script>
+
+<div id="app"></div>
+
+<div id="info">
+  <b>337-01 Estudo 04</b><br>
+  <span style="opacity:0.7">arrastar: orbitar · scroll: zoom · shift+arrastar: pan · <b>F</b>: centralizar</span>
+</div>
+
+<div id="panel">
+  <h3>Câmera</h3>
+  <button id="fit">Centralizar</button>
+  <button id="top">Topo</button>
+  <button id="front">Frente</button>
+  <button id="iso">Iso</button>
+  <hr>
+  <h3>Renderização</h3>
+  <button id="wire">Wireframe</button>
+  <button id="bg">Fundo claro</button>
+  <hr>
+  <h3>Visibilidade</h3>
+  <div id="nodes"></div>
+  <hr>
+  <div id="stats"></div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+const app = document.getElementById('app');
+const W = () => window.innerWidth;
+const H = () => window.innerHeight;
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(W(), H());
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+app.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x1a1a1a);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(50, W()/H(), 0.01, 100000);
+camera.position.set(20, 15, 20);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.screenSpacePanning = true;
+
+scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 0.35));
+const sun = new THREE.DirectionalLight(0xffffff, 1.1);
+sun.position.set(50, 80, 30);
+scene.add(sun);
+
+let model = null;
+let wireOn = false;
+let bgLight = false;
+let bbox = null;
+
+const loader = new GLTFLoader();
+loader.setMeshoptDecoder(MeshoptDecoder);
+const bar = document.getElementById('bar-inner');
+const msg = document.getElementById('msg');
+const sub = document.getElementById('sub');
+
+const GLB_URL = '337-01_Estudo_04_opt.glb';
+
+loader.load(
+  GLB_URL,
+  (gltf) => {
+    model = gltf.scene;
+    scene.add(model);
+
+    bbox = new THREE.Box3().setFromObject(model);
+    fitView('iso');
+
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('panel').style.display = 'block';
+
+    // contagens
+    let meshes = 0, tris = 0;
+    model.traverse((o) => {
+      if (o.isMesh) {
+        meshes++;
+        const g = o.geometry;
+        if (g && g.index) tris += g.index.count / 3;
+        else if (g && g.attributes.position) tris += g.attributes.position.count / 3;
+      }
+    });
+    document.getElementById('stats').innerHTML =
+      `${meshes.toLocaleString('pt-BR')} meshes · ${Math.round(tris).toLocaleString('pt-BR')} tris<br>` +
+      `bbox: ${(bbox.max.x-bbox.min.x).toFixed(1)} × ${(bbox.max.y-bbox.min.y).toFixed(1)} × ${(bbox.max.z-bbox.min.z).toFixed(1)}`;
+
+    // top-level nodes
+    const nodesDiv = document.getElementById('nodes');
+    const list = model.children.length === 1 && model.children[0].children.length > 1
+      ? model.children[0].children
+      : model.children;
+    list.forEach((node, i) => {
+      const id = `n-${i}`;
+      const div = document.createElement('div');
+      div.className = 'row';
+      const name = (node.name || `Nó ${i}`).replace(/_/g, ' ');
+      div.innerHTML = `<input type="checkbox" id="${id}" checked><label for="${id}" title="${node.name}">${name}</label>`;
+      nodesDiv.appendChild(div);
+      div.querySelector('input').addEventListener('change', (e) => {
+        node.visible = e.target.checked;
+      });
+    });
+  },
+  (xhr) => {
+    if (xhr.total) {
+      const pct = (xhr.loaded / xhr.total) * 100;
+      bar.style.width = pct.toFixed(1) + '%';
+      msg.textContent = `Carregando… ${(xhr.loaded/1e6).toFixed(0)} MB / ${(xhr.total/1e6).toFixed(0)} MB`;
+      sub.textContent = `${pct.toFixed(1)}%`;
+    } else {
+      msg.textContent = `Carregando… ${(xhr.loaded/1e6).toFixed(0)} MB`;
+    }
+  },
+  (err) => {
+    msg.textContent = 'Erro ao carregar GLB';
+    sub.textContent = err.message || String(err);
+    console.error(err);
+  }
+);
+
+function fitView(mode = 'iso') {
+  if (!bbox) return;
+  const size = bbox.getSize(new THREE.Vector3());
+  const center = bbox.getCenter(new THREE.Vector3());
+  const maxDim = Math.max(size.x, size.y, size.z);
+  const d = maxDim * 1.1;
+  controls.target.copy(center);
+  if (mode === 'top')   camera.position.set(center.x, center.y + d*1.5, center.z + 0.001);
+  else if (mode === 'front') camera.position.set(center.x, center.y + size.y*0.3, center.z + d*1.4);
+  else                  camera.position.set(center.x + d*0.9, center.y + d*0.65, center.z + d*0.9);
+  camera.near = maxDim / 1000;
+  camera.far = maxDim * 100;
+  camera.updateProjectionMatrix();
+  controls.update();
+}
+
+document.getElementById('fit').addEventListener('click',   () => fitView('iso'));
+document.getElementById('top').addEventListener('click',   () => fitView('top'));
+document.getElementById('front').addEventListener('click', () => fitView('front'));
+document.getElementById('iso').addEventListener('click',   () => fitView('iso'));
+
+document.getElementById('wire').addEventListener('click', (e) => {
+  wireOn = !wireOn;
+  e.target.classList.toggle('active', wireOn);
+  if (!model) return;
+  model.traverse((o) => {
+    if (o.isMesh) {
+      if (Array.isArray(o.material)) o.material.forEach(m => m.wireframe = wireOn);
+      else o.material.wireframe = wireOn;
+    }
+  });
+});
+
+document.getElementById('bg').addEventListener('click', (e) => {
+  bgLight = !bgLight;
+  e.target.classList.toggle('active', bgLight);
+  scene.background = new THREE.Color(bgLight ? 0xeeeeee : 0x1a1a1a);
+});
+
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'f' || e.key === 'F') fitView('iso');
+  if (e.key === 't' || e.key === 'T') fitView('top');
+});
+
+window.addEventListener('resize', () => {
+  camera.aspect = W()/H();
+  camera.updateProjectionMatrix();
+  renderer.setSize(W(), H());
+});
+
+(function loop() {
+  requestAnimationFrame(loop);
+  controls.update();
+  renderer.render(scene, camera);
+})();
+</script>
+</body>
+</html>

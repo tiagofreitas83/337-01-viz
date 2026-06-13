@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>337-01 — Renders</title>
+<style>
+  :root { --gold: #FFCD7D; --bg: #0e0e0e; --panel: #1a1a1a; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: #eee; font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif; }
+  header { padding: 18px 28px 8px; border-bottom: 1px solid #222; position: sticky; top: 0; background: rgba(14,14,14,0.92); backdrop-filter: blur(10px); z-index: 5; }
+  header h1 { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: 0.3px; }
+  header h1 span { color: var(--gold); }
+  header .meta { font-size: 11px; color: #888; margin-top: 4px; }
+  nav { padding: 12px 28px; display: flex; gap: 8px; flex-wrap: wrap; }
+  nav button { background: var(--panel); color: #eee; border: 1px solid #2a2a2a; padding: 7px 13px; border-radius: 6px; cursor: pointer; font-size: 12px; }
+  nav button:hover { border-color: var(--gold); }
+  nav button.active { background: var(--gold); color: #1a1a1a; border-color: var(--gold); font-weight: 600; }
+  main { padding: 4px 28px 28px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(440px, 1fr)); gap: 18px; }
+  .card { background: var(--panel); border-radius: 10px; overflow: hidden; border: 1px solid #222; }
+  .card .title { padding: 10px 14px; font-size: 12px; color: #ccc; display: flex; justify-content: space-between; align-items: center; }
+  .card .title b { color: var(--gold); font-weight: 600; }
+  .card .title .badge { font-size: 10px; color: #777; background: #222; padding: 2px 6px; border-radius: 3px; }
+  .card img { display: block; width: 100%; height: auto; cursor: zoom-in; background: #000; }
+  /* single mode */
+  .single { display: flex; justify-content: center; align-items: flex-start; }
+  .single img { max-width: 100%; max-height: calc(100vh - 200px); width: auto; height: auto; border-radius: 8px; background: #000; }
+  /* lightbox */
+  .lb { position: fixed; inset: 0; background: rgba(0,0,0,0.92); display: none; align-items: center; justify-content: center; z-index: 100; padding: 24px; cursor: zoom-out; }
+  .lb.on { display: flex; }
+  .lb img { max-width: 100%; max-height: 100%; }
+  .info { font-size: 11px; color: #888; padding: 10px 14px 14px; line-height: 1.55; border-top: 1px solid #222; }
+  .info code { background: #0a0a0a; padding: 1px 5px; border-radius: 3px; color: #ddd; font-size: 11px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>337-01 <span>Estudo 04</span> — Reserva da Serra, Canela/RS</h1>
+  <div class="meta">Cycles 512 samples · OIDN · AgX · sol real 15/jan/2026 16h30 (elev 36.3°, az 264.1°) · norte_offset -15°</div>
+</header>
+<nav>
+  <button data-set="final" class="active">Finais 1920×1080</button>
+  <button data-set="test">Testes 960×540</button>
+  <button data-set="grid" class="active">Grid 2×2</button>
+  <button data-set="single">Foco 1</button>
+  <a href="../" style="background:#1a1a1a;color:var(--gold);border:1px solid var(--gold);padding:7px 13px;border-radius:6px;font-size:12px;text-decoration:none;margin-left:auto;font-weight:600">🌐 Visualizador 3D interativo →</a>
+</nav>
+<main id="main"></main>
+
+<div class="lb" id="lb"><img id="lb-img" alt=""></div>
+
+<script>
+const CAMS = [
+  { id: 'cam_eye',          label: 'Olho humano',  lens: '24mm @ 1,60m', note: 'Exterior — reboco/concreto (claros, cor real)' },
+  { id: 'cam_three_quarter',label: '3/4 elevado',  lens: '35mm',         note: 'Volumetria, platibanda, recuos' },
+  { id: 'cam_top_ortho',    label: 'Planta topo',  lens: 'Ortográfica',  note: 'Implantação + cobertura. Glitch corrigido (292 mats OPAQUE).' },
+  { id: 'cam_forro_leste',  label: 'Forro madeira leste', lens: '28mm @ 1,60m', note: 'Interior: forro CARVALHO CLARO 2, estante, sala, lareira.' },
+];
+
+const state = { set: 'final', view: 'grid', focus: 0 };
+const buttons = document.querySelectorAll('nav button');
+buttons.forEach(b => {
+  b.addEventListener('click', () => {
+    const setVal = b.dataset.set;
+    if (setVal === 'final' || setVal === 'test') {
+      state.set = setVal;
+      document.querySelectorAll('[data-set="final"],[data-set="test"]').forEach(x => x.classList.toggle('active', x.dataset.set === setVal));
+    } else {
+      state.view = setVal;
+      document.querySelectorAll('[data-set="grid"],[data-set="single"]').forEach(x => x.classList.toggle('active', x.dataset.set === setVal));
+    }
+    render();
+  });
+});
+
+function render() {
+  const main = document.getElementById('main');
+  main.innerHTML = '';
+  if (state.view === 'grid') {
+    const g = document.createElement('div'); g.className = 'grid';
+    CAMS.forEach((c, i) => {
+      const card = document.createElement('div'); card.className = 'card';
+      card.innerHTML = `
+        <div class="title"><b>${c.label}</b> <span class="badge">${c.lens}</span></div>
+        <img src="${state.set}/${c.id}.png?t=${Date.now()}" alt="${c.id}" data-idx="${i}">
+        <div class="info">${c.note}</div>`;
+      g.appendChild(card);
+    });
+    main.appendChild(g);
+  } else {
+    const s = document.createElement('div'); s.className = 'single';
+    const c = CAMS[state.focus];
+    s.innerHTML = `
+      <div class="card" style="max-width:1400px;width:100%">
+        <div class="title"><b>${c.label}</b> <span class="badge">${c.lens}</span></div>
+        <img src="${state.set}/${c.id}.png?t=${Date.now()}" alt="${c.id}">
+        <div class="info">${c.note}</div>
+      </div>`;
+    main.appendChild(s);
+    // mini-nav
+    const mini = document.createElement('div');
+    mini.style.cssText = 'display:flex;gap:6px;justify-content:center;margin-top:14px';
+    CAMS.forEach((cc, i) => {
+      const b = document.createElement('button');
+      b.textContent = (i+1) + '. ' + cc.label;
+      b.style.cssText = 'background:#1a1a1a;color:#eee;border:1px solid #2a2a2a;padding:6px 10px;border-radius:4px;cursor:pointer;font-size:11px';
+      if (i === state.focus) { b.style.background = 'var(--gold)'; b.style.color = '#1a1a1a'; }
+      b.addEventListener('click', () => { state.focus = i; render(); });
+      mini.appendChild(b);
+    });
+    main.appendChild(mini);
+  }
+  // lightbox bindings
+  main.querySelectorAll('.card img').forEach(img => {
+    img.addEventListener('click', () => {
+      document.getElementById('lb-img').src = img.src;
+      document.getElementById('lb').classList.add('on');
+    });
+  });
+}
+document.getElementById('lb').addEventListener('click', () => {
+  document.getElementById('lb').classList.remove('on');
+});
+render();
+</script>
+</body>
+</html>
