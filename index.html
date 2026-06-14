@@ -33,6 +33,12 @@
   .swatch.on { border-color: var(--gold); background: #2a241a; }
   .chip { width: 18px; height: 18px; border-radius: 3px; flex-shrink: 0; border: 1px solid rgba(255,255,255,0.1); }
   .swatch span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .srow { margin-bottom: 8px; }
+  .srow label { display: block; font-size: 10px; color: #bbb; margin-bottom: 3px; }
+  .srow label b { color: var(--gold); font-weight: 600; }
+  .srow input[type=range] { width: 100%; accent-color: var(--gold); height: 18px; }
+  #sun-info { font-size: 10px; color: #aaa; margin-top: 4px; line-height: 1.5; padding: 6px 8px; background: #161616; border-radius: 4px; border-left: 2px solid var(--gold); }
+  #sun-info b { color: var(--gold); }
   #pickerbar { position: fixed; bottom: 12px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.85); padding: 10px 14px; border-radius: 8px; font-size: 12px; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); display: none; max-width: 90vw; border: 1px solid var(--gold); }
   #pickerbar.on { display: block; }
   #pickerbar .pname { color: var(--gold); font-weight: 600; margin-bottom: 6px; word-break: break-all; }
@@ -95,6 +101,25 @@
   <button id="pickbtn">🔍 Identificar</button>
   <button id="resetcustom">Resetar custom</button>
   <hr>
+  <h3>Sol</h3>
+  <div class="srow">
+    <label>Mês: <b id="sun-month-val">6 · jun</b></label>
+    <input type="range" id="sun-month" min="1" max="12" value="6" step="1">
+  </div>
+  <div class="srow">
+    <label>Hora local (BRT): <b id="sun-hour-val">12:00</b></label>
+    <input type="range" id="sun-hour" min="0" max="24" value="12" step="0.0833333">
+  </div>
+  <div class="srow">
+    <label>Norte (offset °): <b id="sun-north-val">-15</b></label>
+    <input type="range" id="sun-north" min="-180" max="180" value="-15" step="1">
+  </div>
+  <div class="row" style="margin-top:6px">
+    <input type="checkbox" id="sun-path-toggle" checked>
+    <label for="sun-path-toggle">Mostrar elíptica + bússola</label>
+  </div>
+  <div id="sun-info">—</div>
+  <hr>
   <h3>Acabamentos</h3>
   <div id="finishes"></div>
   <hr>
@@ -151,6 +176,7 @@ scene.add(new THREE.HemisphereLight(0xffffff, 0x6a5a44, 1.0));
 const sun = new THREE.DirectionalLight(0xffffff, 0.9);
 sun.position.set(50, 80, 30);
 scene.add(sun);
+scene.add(sun.target);
 const fillBack = new THREE.DirectionalLight(0xc8d4e0, 0.45);
 fillBack.position.set(-40, 50, -25);
 scene.add(fillBack);
@@ -159,6 +185,264 @@ fillSide.position.set(-60, 20, 40);
 scene.add(fillSide);
 const ambient = new THREE.AmbientLight(0xffffff, 0.25);
 scene.add(ambient);
+
+// ============ SOL: posição real (NOAA approx) ============
+const SITE_LAT = -29.3771;   // Canela/RS
+const SITE_LON = -50.8378;
+const TZ_HOURS = -3;         // BRT (UTC-3)
+const MONTH_NAMES = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
+let northOffsetDeg = -15;    // norte verdadeiro 15° à direita do topo do modelo (README)
+const sunState = { month: 6, day: 15, hourLocal: 12, showPath: true };
+let sunMarker = null;
+let sunPathLine = null;
+let sunHourMarkers = [];
+let compassObjs = [];
+
+// retorna {altitude, azimuth} em radianos. azimuth: 0=Norte, π/2=Leste (sentido horário visto de cima)
+function solarPosition(year, month, day, hourUTC) {
+  const date = new Date(Date.UTC(year, month - 1, day));
+  const start = new Date(Date.UTC(year, 0, 1));
+  const N = Math.floor((date - start) / 86400000) + 1;
+  const γ = (2 * Math.PI / 365) * (N - 1 + (hourUTC - 12) / 24);
+  const eqtime = 229.18 * (0.000075 + 0.001868 * Math.cos(γ) - 0.032077 * Math.sin(γ)
+                  - 0.014615 * Math.cos(2*γ) - 0.040849 * Math.sin(2*γ));
+  const decl = 0.006918 - 0.399912 * Math.cos(γ) + 0.070257 * Math.sin(γ)
+              - 0.006758 * Math.cos(2*γ) + 0.000907 * Math.sin(2*γ)
+              - 0.002697 * Math.cos(3*γ) + 0.00148 * Math.sin(3*γ);
+  const time_offset = eqtime + 4 * SITE_LON;
+  const tst = hourUTC * 60 + time_offset;
+  const ha = (tst / 4 - 180) * Math.PI / 180;
+  const latR = SITE_LAT * Math.PI / 180;
+  let cosZ = Math.sin(latR) * Math.sin(decl) + Math.cos(latR) * Math.cos(decl) * Math.cos(ha);
+  cosZ = Math.max(-1, Math.min(1, cosZ));
+  const zenith = Math.acos(cosZ);
+  const altitude = Math.PI / 2 - zenith;
+  let cosAz = (Math.sin(decl) - Math.sin(latR) * Math.cos(zenith)) / (Math.cos(latR) * Math.sin(zenith) || 1e-9);
+  cosAz = Math.max(-1, Math.min(1, cosAz));
+  let azimuth = Math.acos(cosAz);
+  if (ha > 0) azimuth = 2 * Math.PI - azimuth;
+  return { altitude, azimuth };
+}
+
+// converte (altitude, azimuth astronômico) para vetor unitário no espaço do modelo
+function sunDirection(altitude, azimuth) {
+  const nRad = northOffsetDeg * Math.PI / 180;
+  const nx = Math.sin(nRad), nz = Math.cos(nRad);   // norte verdadeiro no modelo
+  const ex = -nz, ez = nx;                           // leste = norte girado -90° (horário, visto de cima)
+  const horiz = Math.cos(altitude);
+  const vert = Math.sin(altitude);
+  const dx = horiz * (Math.cos(azimuth) * nx + Math.sin(azimuth) * ex);
+  const dz = horiz * (Math.cos(azimuth) * nz + Math.sin(azimuth) * ez);
+  return new THREE.Vector3(dx, vert, dz);
+}
+
+function getSunCenter() {
+  if (!bbox) return { center: new THREE.Vector3(), R: 50 };
+  const c = bbox.getCenter(new THREE.Vector3());
+  const sz = bbox.getSize(new THREE.Vector3());
+  c.y = bbox.min.y;
+  const R = Math.max(sz.x, sz.z) * 1.6;
+  return { center: c, R };
+}
+
+function makeTextSprite(text, color = '#FFCD7D', bg = 'rgba(0,0,0,0.6)') {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256; canvas.height = 128;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = bg;
+  ctx.beginPath();
+  if (ctx.roundRect) ctx.roundRect(0, 0, 256, 128, 18); else ctx.rect(0,0,256,128);
+  ctx.fill();
+  ctx.fillStyle = color;
+  ctx.font = 'bold 64px -apple-system, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, 128, 64);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const mat = new THREE.SpriteMaterial({ map: tex, depthTest: false, depthWrite: false });
+  const sprite = new THREE.Sprite(mat);
+  sprite.renderOrder = 999;
+  return sprite;
+}
+
+function buildSunPath() {
+  if (sunPathLine) { scene.remove(sunPathLine); sunPathLine.geometry.dispose(); sunPathLine.material.dispose(); sunPathLine = null; }
+  sunHourMarkers.forEach(o => {
+    scene.remove(o);
+    if (o.geometry) o.geometry.dispose();
+    if (o.material) {
+      if (o.material.map) o.material.map.dispose();
+      o.material.dispose();
+    }
+  });
+  sunHourMarkers = [];
+  if (!bbox) return;
+  const { center, R } = getSunCenter();
+
+  // curva: amostragem de 5 em 5 min ao longo do dia, só onde altitude > 0
+  const points = [];
+  for (let h = 0; h <= 24; h += 5/60) {
+    const hourUTC = h - TZ_HOURS;
+    const { altitude, azimuth } = solarPosition(2026, sunState.month, sunState.day, hourUTC);
+    if (altitude <= 0) continue;
+    const dir = sunDirection(altitude, azimuth);
+    points.push(center.clone().add(dir.multiplyScalar(R)));
+  }
+  if (points.length >= 2) {
+    const geom = new THREE.BufferGeometry().setFromPoints(points);
+    const mat = new THREE.LineBasicMaterial({ color: 0xFFCD7D, transparent: true, opacity: 0.75, depthTest: true });
+    sunPathLine = new THREE.Line(geom, mat);
+    sunPathLine.visible = sunState.showPath;
+    scene.add(sunPathLine);
+  }
+
+  // marcadores horários
+  for (let h = 5; h <= 19; h++) {
+    const hourUTC = h - TZ_HOURS;
+    const { altitude, azimuth } = solarPosition(2026, sunState.month, sunState.day, hourUTC);
+    if (altitude <= 0) continue;
+    const dir = sunDirection(altitude, azimuth);
+    const pos = center.clone().add(dir.multiplyScalar(R));
+    const dot = new THREE.Mesh(
+      new THREE.SphereGeometry(R * 0.012, 16, 16),
+      new THREE.MeshBasicMaterial({ color: 0xFFCD7D })
+    );
+    dot.position.copy(pos);
+    dot.visible = sunState.showPath;
+    scene.add(dot);
+    sunHourMarkers.push(dot);
+
+    const lbl = makeTextSprite(`${h}h`);
+    lbl.position.copy(pos).add(new THREE.Vector3(0, R * 0.045, 0));
+    lbl.scale.set(R * 0.10, R * 0.05, 1);
+    lbl.visible = sunState.showPath;
+    scene.add(lbl);
+    sunHourMarkers.push(lbl);
+  }
+}
+
+function buildCompass() {
+  compassObjs.forEach(o => {
+    scene.remove(o);
+    if (o.geometry) o.geometry.dispose();
+    if (o.material) {
+      if (o.material.map) o.material.map.dispose();
+      o.material.dispose();
+    }
+  });
+  compassObjs = [];
+  if (!bbox) return;
+  const { center, R } = getSunCenter();
+  const ground = center.clone();
+  const Rc = R * 0.55;
+  const dirs = [
+    { label: 'N', az: 0,            color: 0xff5050 },
+    { label: 'E', az: Math.PI / 2,  color: 0xFFCD7D },
+    { label: 'S', az: Math.PI,      color: 0xFFCD7D },
+    { label: 'W', az: 3*Math.PI/2,  color: 0xFFCD7D },
+  ];
+  const nRad = northOffsetDeg * Math.PI / 180;
+  const nx = Math.sin(nRad), nz = Math.cos(nRad);
+  const ex = -nz, ez = nx;
+  dirs.forEach(d => {
+    const dx = nx * Math.cos(d.az) + ex * Math.sin(d.az);
+    const dz = nz * Math.cos(d.az) + ez * Math.sin(d.az);
+    const end = new THREE.Vector3(ground.x + dx * Rc, ground.y + 0.05, ground.z + dz * Rc);
+    const lineGeom = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(ground.x, ground.y + 0.05, ground.z), end
+    ]);
+    const lineMat = new THREE.LineBasicMaterial({ color: d.color, transparent: true, opacity: 0.55 });
+    const line = new THREE.Line(lineGeom, lineMat);
+    line.visible = sunState.showPath;
+    scene.add(line);
+    compassObjs.push(line);
+
+    const lbl = makeTextSprite(d.label, d.label === 'N' ? '#ff7070' : '#FFCD7D');
+    lbl.position.copy(end).add(new THREE.Vector3(0, R * 0.04, 0));
+    lbl.scale.set(R * 0.09, R * 0.045, 1);
+    lbl.visible = sunState.showPath;
+    scene.add(lbl);
+    compassObjs.push(lbl);
+  });
+}
+
+function updateSun() {
+  if (!bbox) return;
+  const hourUTC = sunState.hourLocal - TZ_HOURS;
+  const { altitude, azimuth } = solarPosition(2026, sunState.month, sunState.day, hourUTC);
+  const { center, R } = getSunCenter();
+  const dir = sunDirection(altitude, azimuth);
+  const sunPos = center.clone().add(dir.clone().multiplyScalar(R));
+
+  if (!sunMarker) {
+    sunMarker = new THREE.Mesh(
+      new THREE.SphereGeometry(1, 24, 24),
+      new THREE.MeshBasicMaterial({ color: 0xFFE9A8 })
+    );
+    scene.add(sunMarker);
+  }
+  sunMarker.position.copy(sunPos);
+  sunMarker.scale.setScalar(R * 0.03);
+  sunMarker.visible = altitude > 0;
+
+  // luz direcional do sol
+  sun.target.position.copy(center);
+  sun.target.updateMatrixWorld();
+  sun.position.copy(sunPos);
+  const altDeg = altitude * 180 / Math.PI;
+  if (altitude > 0) {
+    sun.intensity = 0.4 + Math.min(1.2, Math.sin(altitude)) * 1.0;
+    // temperatura: alaranjada baixa, branca alta
+    const warm = Math.max(0, Math.min(1, (15 - altDeg) / 15));
+    const r = 1.0;
+    const g = 1.0 - warm * 0.25;
+    const b = 1.0 - warm * 0.55;
+    sun.color.setRGB(r, g, b);
+  } else {
+    sun.intensity = 0;
+  }
+
+  const azDeg = azimuth * 180 / Math.PI;
+  const hh = Math.floor(sunState.hourLocal);
+  const mm = Math.round((sunState.hourLocal - hh) * 60);
+  const horizonStr = altDeg < 0 ? ' <span style="color:#888">(abaixo do horizonte)</span>' : '';
+  document.getElementById('sun-info').innerHTML =
+    `<b>${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}</b> · 15/${MONTH_NAMES[sunState.month-1]}/2026 (BRT)<br>` +
+    `Azimute: <b>${azDeg.toFixed(1)}°</b> · Altitude: <b>${altDeg.toFixed(1)}°</b>${horizonStr}<br>` +
+    `<span style="opacity:0.6">Canela/RS · ${SITE_LAT}, ${SITE_LON}</span>`;
+}
+
+function refreshSunVisuals() {
+  buildSunPath();
+  buildCompass();
+  updateSun();
+}
+
+// listeners
+document.getElementById('sun-month').addEventListener('input', (e) => {
+  sunState.month = +e.target.value;
+  document.getElementById('sun-month-val').textContent = `${sunState.month} · ${MONTH_NAMES[sunState.month-1]}`;
+  refreshSunVisuals();
+});
+document.getElementById('sun-hour').addEventListener('input', (e) => {
+  sunState.hourLocal = +e.target.value;
+  const hh = Math.floor(sunState.hourLocal);
+  const mm = Math.round((sunState.hourLocal - hh) * 60);
+  document.getElementById('sun-hour-val').textContent = `${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}`;
+  updateSun();
+});
+document.getElementById('sun-north').addEventListener('input', (e) => {
+  northOffsetDeg = +e.target.value;
+  document.getElementById('sun-north-val').textContent = northOffsetDeg;
+  refreshSunVisuals();
+});
+document.getElementById('sun-path-toggle').addEventListener('change', (e) => {
+  sunState.showPath = e.target.checked;
+  if (sunPathLine) sunPathLine.visible = sunState.showPath;
+  sunHourMarkers.forEach(o => o.visible = sunState.showPath);
+  compassObjs.forEach(o => o.visible = sunState.showPath);
+});
 
 let model = null;
 let wireOn = false;
@@ -444,6 +728,7 @@ loader.load(
 
     bbox = new THREE.Box3().setFromObject(model);
     fitView('iso');
+    refreshSunVisuals();
 
     document.getElementById('loading').style.display = 'none';
     document.getElementById('panel').style.display = 'block';
