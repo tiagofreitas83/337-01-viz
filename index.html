@@ -5,46 +5,63 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>337-01 Estudo 04 — Visualizador</title>
 <style>
-  :root { --gold: #FFCD7D; }
-  html, body { margin: 0; padding: 0; height: 100%; background: #1a1a1a; color: #eee; font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif; overflow: hidden; }
+  :root { --gold: #FFCD7D; --bg: rgba(0,0,0,0.55); --br: 8px; }
+  html, body { margin: 0; padding: 0; height: 100%; background: #1a1a1a; color: #eee; font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif; overflow: hidden; -webkit-tap-highlight-color: transparent; }
   #app { position: fixed; inset: 0; }
-  #info { position: fixed; top: 12px; left: 12px; background: rgba(0,0,0,0.55); padding: 10px 14px; border-radius: 8px; font-size: 12px; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); line-height: 1.5; }
-  #info b { color: var(--gold); }
-  #loading { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; flex-direction: column; background: #1a1a1a; z-index: 10; }
-  #bar { width: 320px; height: 4px; background: #2a2a2a; border-radius: 2px; overflow: hidden; margin-top: 14px; }
+  #loading { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; flex-direction: column; background: #1a1a1a; z-index: 10; padding: 20px; }
+  #bar { width: min(320px, 80vw); height: 4px; background: #2a2a2a; border-radius: 2px; overflow: hidden; margin-top: 14px; }
   #bar-inner { height: 100%; background: var(--gold); width: 0%; transition: width 0.15s; }
   #msg { font-size: 14px; color: #ccc; }
   #sub { font-size: 11px; color: #888; margin-top: 6px; }
-  #panel { position: fixed; top: 12px; right: 12px; background: rgba(0,0,0,0.55); padding: 12px 14px; border-radius: 8px; font-size: 12px; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); max-width: 300px; max-height: calc(100vh - 24px); overflow-y: auto; display: none; }
-  #panel h3 { margin: 0 0 8px 0; font-size: 12px; font-weight: 600; color: var(--gold); text-transform: uppercase; letter-spacing: 0.5px; }
+
+  /* botão flutuante toggle do painel */
+  #toggle { position: fixed; top: 12px; right: 12px; width: 40px; height: 40px; background: var(--bg); border: 0; border-radius: var(--br); color: #eee; font-size: 18px; cursor: pointer; z-index: 5; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); display: flex; align-items: center; justify-content: center; }
+  #toggle:hover { background: rgba(0,0,0,0.7); }
+  #toggle svg { width: 20px; height: 20px; stroke: #eee; }
+
+  #panel { position: fixed; top: 12px; right: 12px; background: var(--bg); padding: 12px 14px; border-radius: var(--br); font-size: 12px; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); width: 280px; max-height: calc(100vh - 24px); overflow-y: auto; z-index: 6; display: none; }
+  #panel.open { display: block; }
+  #panel h3 { margin: 0 0 6px 0; font-size: 11px; font-weight: 600; color: var(--gold); text-transform: uppercase; letter-spacing: 0.5px; }
+  #panel .close { position: absolute; top: 8px; right: 8px; width: 26px; height: 26px; border-radius: 4px; background: transparent; border: 0; color: #888; cursor: pointer; font-size: 16px; padding: 0; }
+  #panel .close:hover { background: #2a2a2a; color: #eee; }
+
   .row { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
   .row label { flex: 1; font-size: 11px; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .row input { accent-color: var(--gold); }
-  button { background: #2a2a2a; color: #eee; border: 1px solid #3a3a3a; padding: 6px 10px; border-radius: 4px; cursor: pointer; font-size: 11px; margin-right: 4px; margin-bottom: 4px; }
+  button { background: #2a2a2a; color: #eee; border: 1px solid #3a3a3a; padding: 6px 10px; border-radius: 4px; cursor: pointer; font-size: 11px; margin: 0 4px 4px 0; }
   button:hover { background: #3a3a3a; border-color: var(--gold); }
   button.active { background: var(--gold); color: #1a1a1a; border-color: var(--gold); }
-  hr { border: 0; border-top: 1px solid #2a2a2a; margin: 12px 0; }
-  #stats { font-size: 10px; color: #888; margin-top: 4px; }
-  .group { margin-bottom: 10px; }
-  .group h4 { margin: 0 0 6px 0; font-size: 11px; font-weight: 600; color: #ddd; text-transform: uppercase; letter-spacing: 0.4px; }
+  hr { border: 0; border-top: 1px solid #2a2a2a; margin: 10px 0; }
+  .group { margin-bottom: 8px; }
+  .group h4 { margin: 0 0 4px 0; font-size: 11px; font-weight: 500; color: #ccc; }
   .swatches { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px; }
   .swatch { display: flex; align-items: center; gap: 6px; padding: 4px 6px; background: #1f1f1f; border: 1px solid #2a2a2a; border-radius: 4px; cursor: pointer; font-size: 10px; line-height: 1.2; }
   .swatch:hover { border-color: #4a4a4a; }
   .swatch.on { border-color: var(--gold); background: #2a241a; }
-  .chip { width: 18px; height: 18px; border-radius: 3px; flex-shrink: 0; border: 1px solid rgba(255,255,255,0.1); }
+  .chip { width: 16px; height: 16px; border-radius: 3px; flex-shrink: 0; border: 1px solid rgba(255,255,255,0.1); }
   .swatch span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .srow { margin-bottom: 8px; }
   .srow label { display: block; font-size: 10px; color: #bbb; margin-bottom: 3px; }
   .srow label b { color: var(--gold); font-weight: 600; }
-  .srow input[type=range] { width: 100%; accent-color: var(--gold); height: 18px; }
-  #sun-info { font-size: 10px; color: #aaa; margin-top: 4px; line-height: 1.5; padding: 6px 8px; background: #161616; border-radius: 4px; border-left: 2px solid var(--gold); }
-  #sun-info b { color: var(--gold); }
-  #pickerbar { position: fixed; bottom: 12px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.85); padding: 10px 14px; border-radius: 8px; font-size: 12px; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); display: none; max-width: 90vw; border: 1px solid var(--gold); }
+  .srow input[type=range] { width: 100%; accent-color: var(--gold); height: 22px; }
+
+  #pickerbar { position: fixed; bottom: 12px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.85); padding: 10px 14px; border-radius: var(--br); font-size: 12px; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); display: none; max-width: 90vw; border: 1px solid var(--gold); z-index: 7; }
   #pickerbar.on { display: block; }
   #pickerbar .pname { color: var(--gold); font-weight: 600; margin-bottom: 6px; word-break: break-all; }
   #pickerbar .pact { display: flex; gap: 4px; flex-wrap: wrap; }
   #pickerbar button { font-size: 10px; padding: 4px 8px; margin: 0; }
   #pickbtn.active { background: var(--gold); color: #1a1a1a; border-color: var(--gold); }
+
+  /* mobile */
+  @media (max-width: 768px) {
+    #panel { top: 0; right: 0; width: 100vw; max-width: 100vw; height: 100vh; max-height: 100vh; border-radius: 0; padding: 56px 16px 16px; }
+    #panel .close { top: 12px; right: 12px; width: 36px; height: 36px; font-size: 20px; }
+    button { padding: 10px 14px; font-size: 13px; }
+    .srow input[type=range] { height: 30px; }
+    .swatches { grid-template-columns: repeat(2, 1fr); }
+    .swatch { padding: 8px; font-size: 11px; }
+    #toggle { width: 44px; height: 44px; }
+  }
 </style>
 </head>
 <body>
@@ -83,23 +100,21 @@
   </div>
 </div>
 
-<div id="info">
-  <b>337-01 Estudo 04</b> <span style="opacity:0.35;font-size:9px">build pedra-donata</span><br>
-  <span style="opacity:0.7">arrastar: orbitar · scroll: zoom · shift+arrastar: pan · <b>F</b>: centralizar</span>
-</div>
+<button id="toggle" aria-label="Painel">
+  <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <line x1="3" y1="6"  x2="21" y2="6"/>
+    <line x1="3" y1="12" x2="21" y2="12"/>
+    <line x1="3" y1="18" x2="21" y2="18"/>
+  </svg>
+</button>
 
 <div id="panel">
+  <button class="close" id="panel-close" aria-label="Fechar">×</button>
   <h3>Câmera</h3>
   <button id="fit">Centralizar</button>
   <button id="top">Topo</button>
   <button id="front">Frente</button>
   <button id="iso">Iso</button>
-  <hr>
-  <h3>Renderização</h3>
-  <button id="wire">Wireframe</button>
-  <button id="bg">Fundo claro</button>
-  <button id="pickbtn">🔍 Identificar</button>
-  <button id="resetcustom">Resetar custom</button>
   <hr>
   <h3>Sol</h3>
   <div class="srow">
@@ -107,14 +122,13 @@
     <input type="range" id="sun-month" min="1" max="12" value="6" step="1">
   </div>
   <div class="srow">
-    <label>Hora local (BRT): <b id="sun-hour-val">12:00</b></label>
+    <label>Hora: <b id="sun-hour-val">12:00</b></label>
     <input type="range" id="sun-hour" min="0" max="24" value="12" step="0.0833333">
   </div>
   <div class="srow">
-    <label>Norte (seta vermelha "N" deve apontar pro vale): <b id="sun-north-val">-149</b>°</label>
+    <label>Orientação (°): <b id="sun-north-val">-149</b></label>
     <input type="range" id="sun-north" min="-180" max="180" value="-149" step="1">
   </div>
-  <div id="sun-info">—</div>
   <hr>
   <h3>Acabamentos</h3>
   <div id="finishes"></div>
@@ -122,7 +136,10 @@
   <h3>Visibilidade</h3>
   <div id="nodes"></div>
   <hr>
-  <div id="stats"></div>
+  <h3>Renderização</h3>
+  <button id="wire">Wireframe</button>
+  <button id="pickbtn">Identificar</button>
+  <button id="resetcustom">Resetar</button>
 </div>
 
 <script type="importmap">
@@ -139,7 +156,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { Sky } from 'three/addons/objects/Sky.js';
 
 const app = document.getElementById('app');
 const W = () => window.innerWidth;
@@ -156,11 +173,69 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 app.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x1a1a1a);
 
-const pmrem = new THREE.PMREMGenerator(renderer);
-scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-const ENV_INTENSITY = 1.6;
+const pmremGen = new THREE.PMREMGenerator(renderer);
+pmremGen.compileEquirectangularShader();
+const ENV_INTENSITY = 1.0;
+
+// ============ SKY procedural (Rayleigh + Mie) ============
+const sky = new Sky();
+sky.scale.setScalar(450000);
+scene.add(sky);
+const skyU = sky.material.uniforms;
+skyU.turbidity.value = 8;
+skyU.rayleigh.value = 2;
+skyU.mieCoefficient.value = 0.005;
+skyU.mieDirectionalG.value = 0.8;
+
+// Sky duplicado em scene auxiliar pra gerar envMap PBR dinâmico
+const envSky = new Sky();
+const envScene = new THREE.Scene();
+envScene.add(envSky);
+let envRT = null;
+function refreshEnvironment() {
+  const a = skyU, b = envSky.material.uniforms;
+  b.turbidity.value = a.turbidity.value;
+  b.rayleigh.value = a.rayleigh.value;
+  b.mieCoefficient.value = a.mieCoefficient.value;
+  b.mieDirectionalG.value = a.mieDirectionalG.value;
+  b.sunPosition.value.copy(a.sunPosition.value);
+  if (envRT) envRT.dispose();
+  envRT = pmremGen.fromScene(envScene, 0.04);
+  scene.environment = envRT.texture;
+}
+
+// ============ Estrelas (3500 pontos no hemisfério superior) ============
+const stars = (() => {
+  const N = 3500;
+  const pos = new Float32Array(N * 3);
+  for (let i = 0; i < N; i++) {
+    let x, y, z, l;
+    do {
+      x = Math.random() * 2 - 1;
+      y = Math.random();           // hemisfério superior
+      z = Math.random() * 2 - 1;
+      l = Math.sqrt(x*x + y*y + z*z);
+    } while (l > 1 || l < 0.05);
+    const r = 200000;
+    pos[i*3]   = r * x / l;
+    pos[i*3+1] = r * y / l;
+    pos[i*3+2] = r * z / l;
+  }
+  const geom = new THREE.BufferGeometry();
+  geom.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  const mat = new THREE.PointsMaterial({
+    color: 0xffffff,
+    size: 180,
+    sizeAttenuation: true,
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+  return new THREE.Points(geom, mat);
+})();
+scene.add(stars);
 
 const camera = new THREE.PerspectiveCamera(50, W()/H(), 0.01, 100000);
 camera.position.set(20, 15, 20);
@@ -198,9 +273,7 @@ const TZ_HOURS = -3;         // BRT (UTC-3)
 const MONTH_NAMES = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
 let northOffsetDeg = -149;   // varanda em -Z apontando pra az 31° NE (= +Z girado 180° + 31°)
 const sunState = { month: 6, day: 15, hourLocal: 12 };
-let sunMarker = null;
 let shadowGround = null;
-let northArrow = null;
 
 // retorna {altitude, azimuth} em radianos. azimuth: 0=Norte, π/2=Leste (sentido horário visto de cima)
 function solarPosition(year, month, day, hourUTC) {
@@ -323,27 +396,22 @@ function updateSun() {
   const hourUTC = sunState.hourLocal - TZ_HOURS;
   const { altitude, azimuth } = solarPosition(2026, sunState.month, sunState.day, hourUTC);
   const altDeg = altitude * 180 / Math.PI;
-  const azDeg  = azimuth  * 180 / Math.PI;
   const { center, R } = getSunCenter();
   const dir = sunDirection(altitude, azimuth);
-  const sunPos = center.clone().add(dir.clone().multiplyScalar(R));
 
-  if (!sunMarker) {
-    sunMarker = new THREE.Mesh(
-      new THREE.SphereGeometry(1, 24, 24),
-      new THREE.MeshBasicMaterial({ color: 0xFFE9A8 })
-    );
-    sunMarker.frustumCulled = false;
-    scene.add(sunMarker);
-  }
-  sunMarker.position.copy(sunPos);
-  sunMarker.scale.setScalar(R * 0.035);
-  // sol visível até ~1° abaixo do horizonte (deixa caminho pra desaparecer suavemente)
-  sunMarker.visible = altDeg > -1;
+  // Sky shader: sunPosition é direção unitária do observador → sol
+  skyU.sunPosition.value.copy(dir);
+  // Rayleigh aumenta no horizonte (céu mais vermelho/laranja); turbidity também
+  if (altDeg >= 10)       { skyU.rayleigh.value = 1.5; skyU.turbidity.value = 6; skyU.mieCoefficient.value = 0.005; }
+  else if (altDeg >= 0)   { skyU.rayleigh.value = 1.5 + (10 - altDeg) * 0.20; skyU.turbidity.value = 6 + (10 - altDeg) * 0.5; skyU.mieCoefficient.value = 0.005 + (10 - altDeg) * 0.0008; }
+  else if (altDeg >= -8)  { skyU.rayleigh.value = 3.5 + (-altDeg) * 0.05; skyU.turbidity.value = 11 + (-altDeg) * 0.5; skyU.mieCoefficient.value = 0.011 + (-altDeg) * 0.0004; }
+  else                    { skyU.rayleigh.value = 0.5; skyU.turbidity.value = 1; skyU.mieCoefficient.value = 0.001; }
 
-  // céu + intensidades
+  // céu (background do Sky shader já desenha o céu inteiro — não setamos scene.background)
+  scene.background = null;
+
+  // luzes
   const s = skyState(altDeg);
-  if (!bgLight) scene.background = s.bg;
   hemi.color.copy(s.sky);
   hemi.groundColor.copy(s.gnd);
   ambient.intensity = s.amb;
@@ -352,99 +420,26 @@ function updateSun() {
   fillBack.intensity = FILL_BACK_BASE * s.fill;
   fillSide.intensity = FILL_SIDE_BASE * s.fill;
   renderer.toneMappingExposure = s.exp;
-  // sol marker brilha com a cor do sol (mais quente perto do horizonte)
-  if (altDeg > 0) {
-    sunMarker.material.color.copy(s.sun).multiplyScalar(1.1);
-  } else if (altDeg > -1) {
-    sunMarker.material.color.copy(s.sun).multiplyScalar(0.7);
-  }
 
-  // posiciona luz direcional
+  // posiciona luz direcional (sol no infinito visto do centro)
+  const sunPos = center.clone().add(dir.clone().multiplyScalar(R));
   sun.target.position.copy(center);
   sun.target.updateMatrixWorld();
   sun.position.copy(sunPos);
 
-  // info
-  const hh = Math.floor(sunState.hourLocal);
-  const mm = Math.round((sunState.hourLocal - hh) * 60);
-  let phase = '';
-  if (altDeg >= 30) phase = 'dia';
-  else if (altDeg >= 6) phase = 'manhã/tarde';
-  else if (altDeg >= 0) phase = 'golden hour';
-  else if (altDeg >= -6) phase = 'crepúsculo civil';
-  else if (altDeg >= -18) phase = 'crepúsculo náutico/astro';
-  else phase = 'noite';
-  document.getElementById('sun-info').innerHTML =
-    `<b>${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}</b> · 15/${MONTH_NAMES[sunState.month-1]}/2026 (BRT) · <b>${phase}</b><br>` +
-    `Azimute: <b>${azDeg.toFixed(1)}°</b> · Altitude: <b>${altDeg.toFixed(1)}°</b><br>` +
-    `<span style="opacity:0.6">Canela/RS · ${SITE_LAT}, ${SITE_LON}</span>`;
-}
-
-function buildNorthArrow() {
-  if (northArrow) {
-    scene.remove(northArrow);
-    northArrow.traverse(o => {
-      if (o.geometry) o.geometry.dispose();
-      if (o.material) {
-        if (o.material.map) o.material.map.dispose();
-        o.material.dispose();
-      }
-    });
-    northArrow = null;
+  // estrelas: ganham opacidade durante o crepúsculo náutico/astro até a noite
+  if (altDeg < -6) {
+    stars.material.opacity = Math.min(1, (-altDeg - 6) / 12);
+  } else {
+    stars.material.opacity = 0;
   }
-  if (!bbox) return;
-  const { center, R } = getSunCenter();
-  const len = R * 0.30;
-  const nRad = northOffsetDeg * Math.PI / 180;
-  const nx = Math.sin(nRad), nz = Math.cos(nRad);
-  const y = center.y + 0.05;
-  const start = new THREE.Vector3(center.x, y, center.z);
-  const tip   = new THREE.Vector3(center.x + nx * len, y, center.z + nz * len);
+  stars.visible = stars.material.opacity > 0.01;
 
-  const grp = new THREE.Group();
-  // linha
-  const lineGeom = new THREE.BufferGeometry().setFromPoints([start, tip]);
-  const lineMat = new THREE.LineBasicMaterial({ color: 0xff4040, transparent: true, opacity: 0.9, depthTest: false });
-  const line = new THREE.Line(lineGeom, lineMat);
-  line.renderOrder = 998;
-  grp.add(line);
-  // ponta (cone)
-  const coneGeom = new THREE.ConeGeometry(R * 0.018, R * 0.05, 16);
-  const coneMat = new THREE.MeshBasicMaterial({ color: 0xff4040, depthTest: false });
-  const cone = new THREE.Mesh(coneGeom, coneMat);
-  cone.renderOrder = 998;
-  cone.position.copy(tip);
-  cone.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), new THREE.Vector3(nx, 0, nz));
-  grp.add(cone);
-
-  // label "N" no fim
-  const canvas = document.createElement('canvas');
-  canvas.width = 128; canvas.height = 128;
-  const ctx = canvas.getContext('2d');
-  ctx.fillStyle = 'rgba(0,0,0,0.7)';
-  ctx.beginPath();
-  ctx.arc(64, 64, 56, 0, Math.PI*2);
-  ctx.fill();
-  ctx.fillStyle = '#ff5050';
-  ctx.font = 'bold 90px -apple-system, sans-serif';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText('N', 64, 68);
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  const lblMat = new THREE.SpriteMaterial({ map: tex, depthTest: false, depthWrite: false });
-  const lbl = new THREE.Sprite(lblMat);
-  lbl.renderOrder = 999;
-  lbl.scale.set(R*0.08, R*0.08, 1);
-  lbl.position.copy(tip).add(new THREE.Vector3(nx * R*0.04, R*0.05, nz * R*0.04));
-  grp.add(lbl);
-
-  scene.add(grp);
-  northArrow = grp;
+  // environment PBR dinâmico (reflexões nos materiais seguem o céu real)
+  refreshEnvironment();
 }
 
 function refreshSunVisuals() {
-  buildNorthArrow();
   updateSun();
 }
 
@@ -469,7 +464,6 @@ document.getElementById('sun-north').addEventListener('input', (e) => {
 
 let model = null;
 let wireOn = false;
-let bgLight = false;
 let bbox = null;
 
 // ============ MATERIAL LIBRARY (PBR procedural via canvas) ============
@@ -755,7 +749,10 @@ loader.load(
     refreshSunVisuals();
 
     document.getElementById('loading').style.display = 'none';
-    document.getElementById('panel').style.display = 'block';
+    // painel aberto por default em desktop, fechado em mobile
+    if (window.matchMedia('(min-width: 769px)').matches) {
+      document.getElementById('panel').classList.add('open');
+    }
 
     // contagens + boost de envMapIntensity + classificação dos meshes em grupos
     let meshes = 0, tris = 0;
@@ -812,31 +809,12 @@ loader.load(
     });
     console.log(`[auto-floor] detectados por geometria: +${geomFloorCount} meshes`);
 
-    // contagem por nome de material em cada grupo (debug visual)
-    const matsByGroup = {};
-    for (const [key, list] of Object.entries(meshGroups)) {
-      const counts = {};
-      list.forEach(({mesh, slot}) => {
-        const m = Array.isArray(mesh.material) ? mesh.material[slot] : mesh.material;
-        const n = m?.name || '(sem nome)';
-        counts[n] = (counts[n] || 0) + 1;
-      });
-      matsByGroup[key] = counts;
-    }
-    console.log('Acabamentos detectados:', matsByGroup);
-
-    // monta UI de acabamentos
+    // monta UI de acabamentos (só os swatches, sem listas verbose)
     const finishesDiv = document.getElementById('finishes');
     for (const [key, grp] of Object.entries(GROUPS)) {
       const wrap = document.createElement('div');
       wrap.className = 'group';
-      const count = meshGroups[key].length;
-      const matEntries = Object.entries(matsByGroup[key] || {}).sort((a,b)=>b[1]-a[1]);
-      const matListHTML = matEntries.length
-        ? matEntries.map(([n,c]) => `<span style="display:inline-block;margin:0 4px 2px 0;padding:1px 4px;background:#1a1a1a;border-radius:2px;">${n} (${c})</span>`).join('')
-        : '<span style="color:#c66;">— nenhum material classificado —</span>';
-      wrap.innerHTML = `<h4>${grp.label} <span style="opacity:0.5;font-weight:400">· ${count} sup.</span></h4>
-                        <div style="font-size:9px;color:#999;margin-bottom:6px;line-height:1.4;">${matListHTML}</div>`;
+      wrap.innerHTML = `<h4>${grp.label}</h4>`;
       const sw = document.createElement('div'); sw.className = 'swatches';
       grp.options.forEach(opt => {
         const cfg = MATERIALS[opt.id];
@@ -853,9 +831,6 @@ loader.load(
       wrap.appendChild(sw);
       finishesDiv.appendChild(wrap);
     }
-    document.getElementById('stats').innerHTML =
-      `${meshes.toLocaleString('pt-BR')} meshes · ${Math.round(tris).toLocaleString('pt-BR')} tris<br>` +
-      `bbox: ${(bbox.max.x-bbox.min.x).toFixed(1)} × ${(bbox.max.y-bbox.min.y).toFixed(1)} × ${(bbox.max.z-bbox.min.z).toFixed(1)}`;
 
     // top-level nodes
     const nodesDiv = document.getElementById('nodes');
@@ -902,7 +877,7 @@ function fitView(mode = 'iso') {
   else if (mode === 'front') camera.position.set(center.x, center.y + size.y*0.3, center.z + d*1.4);
   else                  camera.position.set(center.x + d*0.9, center.y + d*0.65, center.z + d*0.9);
   camera.near = maxDim / 1000;
-  camera.far = maxDim * 100;
+  camera.far = Math.max(maxDim * 100, 2000000);  // Sky em 450k → far precisa ser maior
   camera.updateProjectionMatrix();
   controls.update();
 }
@@ -924,11 +899,10 @@ document.getElementById('wire').addEventListener('click', (e) => {
   });
 });
 
-document.getElementById('bg').addEventListener('click', (e) => {
-  bgLight = !bgLight;
-  e.target.classList.toggle('active', bgLight);
-  scene.background = new THREE.Color(bgLight ? 0xeeeeee : 0x1a1a1a);
-});
+// toggle do painel (botão ☰ + ×)
+const panelEl = document.getElementById('panel');
+document.getElementById('toggle').addEventListener('click', () => panelEl.classList.toggle('open'));
+document.getElementById('panel-close').addEventListener('click', () => panelEl.classList.remove('open'));
 
 window.addEventListener('keydown', (e) => {
   if (e.key === 'f' || e.key === 'F') fitView('iso');
