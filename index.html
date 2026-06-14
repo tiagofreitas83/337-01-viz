@@ -111,8 +111,8 @@
     <input type="range" id="sun-hour" min="0" max="24" value="12" step="0.0833333">
   </div>
   <div class="srow">
-    <label>Norte (seta vermelha deve apontar pro vale): <b id="sun-north-val">31</b>°</label>
-    <input type="range" id="sun-north" min="-180" max="180" value="31" step="1">
+    <label>Norte (seta vermelha "N" deve apontar pro vale): <b id="sun-north-val">-149</b>°</label>
+    <input type="range" id="sun-north" min="-180" max="180" value="-149" step="1">
   </div>
   <div id="sun-info">—</div>
   <hr>
@@ -196,7 +196,7 @@ const SITE_LAT = -29.3771;   // Canela/RS
 const SITE_LON = -50.8378;
 const TZ_HOURS = -3;         // BRT (UTC-3)
 const MONTH_NAMES = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
-let northOffsetDeg = 31;     // vale 31° NE → varanda aponta pra essa direção (assume +Z=frente)
+let northOffsetDeg = -149;   // varanda em -Z apontando pra az 31° NE (= +Z girado 180° + 31°)
 const sunState = { month: 6, day: 15, hourLocal: 12 };
 let sunMarker = null;
 let shadowGround = null;
@@ -385,7 +385,10 @@ function buildNorthArrow() {
     scene.remove(northArrow);
     northArrow.traverse(o => {
       if (o.geometry) o.geometry.dispose();
-      if (o.material) o.material.dispose();
+      if (o.material) {
+        if (o.material.map) o.material.map.dispose();
+        o.material.dispose();
+      }
     });
     northArrow = null;
   }
@@ -413,6 +416,29 @@ function buildNorthArrow() {
   cone.position.copy(tip);
   cone.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), new THREE.Vector3(nx, 0, nz));
   grp.add(cone);
+
+  // label "N" no fim
+  const canvas = document.createElement('canvas');
+  canvas.width = 128; canvas.height = 128;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = 'rgba(0,0,0,0.7)';
+  ctx.beginPath();
+  ctx.arc(64, 64, 56, 0, Math.PI*2);
+  ctx.fill();
+  ctx.fillStyle = '#ff5050';
+  ctx.font = 'bold 90px -apple-system, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('N', 64, 68);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const lblMat = new THREE.SpriteMaterial({ map: tex, depthTest: false, depthWrite: false });
+  const lbl = new THREE.Sprite(lblMat);
+  lbl.renderOrder = 999;
+  lbl.scale.set(R*0.08, R*0.08, 1);
+  lbl.position.copy(tip).add(new THREE.Vector3(nx * R*0.04, R*0.05, nz * R*0.04));
+  grp.add(lbl);
+
   scene.add(grp);
   northArrow = grp;
 }
