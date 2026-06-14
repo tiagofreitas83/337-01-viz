@@ -111,8 +111,8 @@
     <input type="range" id="sun-hour" min="0" max="24" value="12" step="0.0833333">
   </div>
   <div class="srow">
-    <label>Norte (gire até a varanda apontar pro N): <b id="sun-north-val">0</b>°</label>
-    <input type="range" id="sun-north" min="-180" max="180" value="0" step="1">
+    <label>Norte (seta vermelha deve apontar pro vale): <b id="sun-north-val">31</b>°</label>
+    <input type="range" id="sun-north" min="-180" max="180" value="31" step="1">
   </div>
   <div id="sun-info">—</div>
   <hr>
@@ -196,10 +196,11 @@ const SITE_LAT = -29.3771;   // Canela/RS
 const SITE_LON = -50.8378;
 const TZ_HOURS = -3;         // BRT (UTC-3)
 const MONTH_NAMES = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
-let northOffsetDeg = 0;      // calibrar visualmente (varanda → N)
+let northOffsetDeg = 31;     // vale 31° NE → varanda aponta pra essa direção (assume +Z=frente)
 const sunState = { month: 6, day: 15, hourLocal: 12 };
 let sunMarker = null;
 let shadowGround = null;
+let northArrow = null;
 
 // retorna {altitude, azimuth} em radianos. azimuth: 0=Norte, π/2=Leste (sentido horário visto de cima)
 function solarPosition(year, month, day, hourUTC) {
@@ -379,7 +380,45 @@ function updateSun() {
     `<span style="opacity:0.6">Canela/RS · ${SITE_LAT}, ${SITE_LON}</span>`;
 }
 
+function buildNorthArrow() {
+  if (northArrow) {
+    scene.remove(northArrow);
+    northArrow.traverse(o => {
+      if (o.geometry) o.geometry.dispose();
+      if (o.material) o.material.dispose();
+    });
+    northArrow = null;
+  }
+  if (!bbox) return;
+  const { center, R } = getSunCenter();
+  const len = R * 0.30;
+  const nRad = northOffsetDeg * Math.PI / 180;
+  const nx = Math.sin(nRad), nz = Math.cos(nRad);
+  const y = center.y + 0.05;
+  const start = new THREE.Vector3(center.x, y, center.z);
+  const tip   = new THREE.Vector3(center.x + nx * len, y, center.z + nz * len);
+
+  const grp = new THREE.Group();
+  // linha
+  const lineGeom = new THREE.BufferGeometry().setFromPoints([start, tip]);
+  const lineMat = new THREE.LineBasicMaterial({ color: 0xff4040, transparent: true, opacity: 0.9, depthTest: false });
+  const line = new THREE.Line(lineGeom, lineMat);
+  line.renderOrder = 998;
+  grp.add(line);
+  // ponta (cone)
+  const coneGeom = new THREE.ConeGeometry(R * 0.018, R * 0.05, 16);
+  const coneMat = new THREE.MeshBasicMaterial({ color: 0xff4040, depthTest: false });
+  const cone = new THREE.Mesh(coneGeom, coneMat);
+  cone.renderOrder = 998;
+  cone.position.copy(tip);
+  cone.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), new THREE.Vector3(nx, 0, nz));
+  grp.add(cone);
+  scene.add(grp);
+  northArrow = grp;
+}
+
 function refreshSunVisuals() {
+  buildNorthArrow();
   updateSun();
 }
 
