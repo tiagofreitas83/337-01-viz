@@ -10,6 +10,23 @@ Visualização do estudo arquitetônico **337-01 Estudo 04** em Canela (RS).
   - `final/` — 4 câmeras a 1920×1080, 512 samples, OIDN, AgX.
   - `test/` — testes 960×540, 64 samples.
   - `sun_study/` — variação solar ao longo do dia (cam_forro_leste + cam_fascia_leste).
+- **`tools/enhance.mjs`** — pós-produção dos renders via IA (sem dependências, Node ≥18).
+
+## Pós-produção IA (`tools/enhance.mjs`)
+
+Pipeline: **render PNG → Nano Banana 2 (refino) → Magnific (upscale) → PNG final**.
+
+```bash
+export GEMINI_API_KEY=...      # API Gemini (Nano Banana 2 = gemini-3.1-flash-image)
+export MAGNIFIC_API_KEY=...    # API Magnific (ou FREEPIK_API_KEY)
+
+node tools/enhance.mjs renders/final/cam_eye.png --scale 4x
+node tools/enhance.mjs renders/final/*.png --model pro --skip-upscale   # só refino
+```
+
+Saída em `renders/enhanced/`. Veja `node tools/enhance.mjs --help` para todas as opções
+(`--prompt`, `--scale`, `--optimized-for`, `--engine`, `--creativity`, `--hdr`, `--resemblance`,
+`--skip-refine`, `--skip-upscale`).
 
 ## Iluminação
 
